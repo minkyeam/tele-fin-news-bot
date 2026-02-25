@@ -1,0 +1,29 @@
+# 환경 변수 (API 키 포함 — 절대 커밋 금지)
+.env
+*.env
+
+# Telethon 세션 파일
+*.session
+*.session-journal
+
+# 데이터베이스
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
