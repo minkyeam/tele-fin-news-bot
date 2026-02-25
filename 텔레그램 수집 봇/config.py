@@ -40,10 +40,15 @@ CHANNEL_LIST: list[str] = [ch.strip() for ch in _raw.split(",") if ch.strip()]
 EMBEDDING_MODEL  = "gemini-embedding-001"  # 3072차원
 
 # 요약 모델 우선순위 체인 — 앞 모델이 429이면 다음으로 자동 fallback
+# Gemini 계열: 낮은 쿼터 / Gemma 계열: 별도 쿼터 체계 (사실상 무제한에 가까움)
 CHAT_MODEL = "gemini-flash-latest"
 CHAT_MODEL_FALLBACKS = [
-    "gemini-flash-latest",
-    "gemini-2.5-flash",
+    "gemini-flash-latest",       # Gemini 계열 (성능 우선)
+    "gemini-flash-lite-latest",
     "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
     "gemini-2.5-pro",
+    "gemma-3-27b-it",            # Gemma 계열 (별도 쿼터 — 사실상 무제한)
+    "gemma-3-12b-it",
+    "gemma-3-4b-it",
 ]

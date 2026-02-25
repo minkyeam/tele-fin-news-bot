@@ -77,24 +77,31 @@ def _parse_response(text: str) -> tuple[str, str]:
     # 요약이 여러 줄에 걸쳐 있을 경우 처리
     if not summary:
         lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
-        body = [l for l in lines if not l.startswith("제목:")]
-        summary = " ".join(body)[:400]
+        # 제목 제외, 요약 키워드 제외
+        body = [l for l in lines if not l.startswith("제목:") and not l.startswith("요약:")]
+        summary = "\n".join(body)[:500]
 
     return title or "시그널", summary
 
 
 
 def _call_model(model: str, user_msg: str) -> str:
-    """단일 모델 호출. 성공 시 응답 텍스트, 429면 None 반환, 기타 오류는 예외."""
-    resp = _client.models.generate_content(
-        model=model,
-        contents=user_msg,
-        config=types.GenerateContentConfig(
+    """단일 모델 호출. Gemma는 system_instruction 미지원이므로 프롬프트에 병합."""
+    is_gemma = model.startswith("gemma")
+
+    if is_gemma:
+        # Gemma: system + user를 하나의 텍스트로 합침
+        combined = f"{_SYSTEM_PROMPT}\n\n---\n\n{user_msg}"
+        cfg = types.GenerateContentConfig(temperature=0.3, max_output_tokens=400)
+        resp = _client.models.generate_content(model=model, contents=combined, config=cfg)
+    else:
+        cfg = types.GenerateContentConfig(
             system_instruction=_SYSTEM_PROMPT,
             temperature=0.3,
             max_output_tokens=400,
-        ),
-    )
+        )
+        resp = _client.models.generate_content(model=model, contents=user_msg, config=cfg)
+
     return resp.text or ""
 
 
@@ -138,7 +145,7 @@ def run_summarization(clusters: list[Cluster]) -> None:
         print("[Summarizer] 요약할 클러스터가 없습니다.")
         return
 
-    db.clear_signals()
+    # note: db.clear_signals()는 이제 clusterer에서 호출하거나 pipeline에서 관리합니다.
     print(f"[Summarizer] {len(clusters)}개 클러스터 요약 시작...")
 
     for i, cluster in enumerate(clusters, start=1):
