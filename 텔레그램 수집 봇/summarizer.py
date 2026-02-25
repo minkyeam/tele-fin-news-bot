@@ -12,9 +12,6 @@ summarizer.py
 
 from __future__ import annotations
 
-import re
-import time
-
 from google import genai
 from google.genai import types
 from google.genai.errors import ClientError
@@ -86,11 +83,6 @@ def _parse_response(text: str) -> tuple[str, str]:
     return title or "시그널", summary
 
 
-def _extract_retry_delay(error: ClientError) -> float:
-    """429 응답에서 retry delay(초)를 추출합니다. 없으면 기본 60초."""
-    match = re.search(r"retry[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*s", str(error), re.I)
-    return float(match.group(1)) + 1.0 if match else 60.0
-
 
 def _call_model(model: str, user_msg: str) -> str:
     """단일 모델 호출. 성공 시 응답 텍스트, 429면 None 반환, 기타 오류는 예외."""
@@ -124,9 +116,7 @@ def summarize_cluster(cluster: Cluster) -> tuple[str, str]:
 
         except ClientError as e:
             if "429" in str(e)[:20]:
-                delay = _extract_retry_delay(e)
-                print(f"  [429] {model} 한도 초과 → 다음 모델로 fallback (대기 {delay:.0f}s)")
-                time.sleep(delay)
+                print(f"  [429] {model} 한도 초과 → 다음 모델로 즉시 fallback")
             else:
                 print(f"  [!] {model} 호출 실패: {str(e)[:100]}")
                 break  # 429 외 오류는 다음 모델 시도 무의미
