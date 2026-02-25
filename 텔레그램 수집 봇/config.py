@@ -37,7 +37,14 @@ _raw = os.getenv("CHANNEL_LIST", "")
 CHANNEL_LIST: list[str] = [ch.strip() for ch in _raw.split(",") if ch.strip()]
 
 # ── Gemini 모델 ───────────────────────────────────────────────────────────────
-EMBEDDING_MODEL  = "gemini-embedding-001"  # 3072차원
+# 임베딩 모델 우선순위 체인
+# API 모델 소진 시 로컬 sentence-transformers로 자동 fallback
+EMBEDDING_MODEL = "gemini-embedding-001"   # Gemini API (3072차원)
+EMBEDDING_MODEL_FALLBACKS = [
+    "gemini-embedding-001",                          # Gemini API
+    "paraphrase-multilingual-mpnet-base-v2",         # 로컬 — 한국어 포함 다국어, 768차원
+    "paraphrase-multilingual-MiniLM-L12-v2",         # 로컬 — 경량 다국어, 384차원
+]
 
 # 요약 모델 우선순위 체인 — 앞 모델이 429이면 다음으로 자동 fallback
 # Gemini 계열: 낮은 쿼터 / Gemma 계열: 별도 쿼터 체계 (사실상 무제한에 가까움)

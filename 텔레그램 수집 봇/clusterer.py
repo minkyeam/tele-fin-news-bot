@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 from google import genai
+from google.genai.errors import ClientError
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import normalize
 
@@ -25,6 +26,7 @@ import config
 import database as db
 
 _client = genai.Client(api_key=config.GEMINI_API_KEY)
+_local_embedder = None   # sentence-transformers는 필요 시 lazy load
 
 
 @dataclass
@@ -37,20 +39,57 @@ class Cluster:
     total_authority_score: float = 0.0
 
 
-def _embed_texts(texts: list[str]) -> np.ndarray:
-    """배치 임베딩 — Gemini text-embedding-004 (768차원)."""
+def _embed_gemini(model: str, texts: list[str]) -> np.ndarray:
+    """Gemini API 임베딩. 429 시 ClientError 발생."""
     batch_size = 100
     all_vecs = []
-
     for i in range(0, len(texts), batch_size):
-        batch = texts[i : i + batch_size]
         result = _client.models.embed_content(
-            model=config.EMBEDDING_MODEL,
-            contents=batch,
+            model=model, contents=texts[i : i + batch_size]
         )
         all_vecs.extend([emb.values for emb in result.embeddings])
-
     return np.array(all_vecs, dtype=np.float32)
+
+
+def _embed_local(model_name: str, texts: list[str]) -> np.ndarray:
+    """sentence-transformers 로컬 임베딩 (API 불필요)."""
+    global _local_embedder
+    from sentence_transformers import SentenceTransformer
+    if _local_embedder is None or _local_embedder.model_card_data.model_name != model_name:
+        print(f"  [로컬 임베딩] 모델 로드 중: {model_name} (최초 1회만)")
+        _local_embedder = SentenceTransformer(model_name)
+    vecs = _local_embedder.encode(texts, batch_size=64, show_progress_bar=False)
+    return np.array(vecs, dtype=np.float32)
+
+
+def _embed_texts(texts: list[str]) -> np.ndarray:
+    """
+    임베딩 fallback 체인:
+      1. Gemini API 모델들 순서대로 시도
+      2. 429 소진 시 로컬 sentence-transformers로 자동 전환
+    """
+    for model in config.EMBEDDING_MODEL_FALLBACKS:
+        is_local = not model.startswith("gemini")
+        try:
+            if is_local:
+                vecs = _embed_local(model, texts)
+            else:
+                vecs = _embed_gemini(model, texts)
+            if model != config.EMBEDDING_MODEL:
+                print(f"  (임베딩 fallback 성공: {model})")
+            return vecs
+        except ClientError as e:
+            if "429" in str(e)[:20]:
+                print(f"  [429] {model} 임베딩 한도 초과 → 다음으로 즉시 fallback")
+            else:
+                print(f"  [!] {model} 임베딩 오류: {str(e)[:80]}")
+                break
+        except Exception as e:
+            print(f"  [!] {model} 임베딩 오류: {e}")
+            if is_local:
+                break  # 로컬 모델 오류는 더 이상 fallback 없음
+
+    raise RuntimeError("모든 임베딩 모델 실패 — 클러스터링 불가")
 
 
 def run_clustering(top_n: int | None = None) -> list[Cluster]:
@@ -64,6 +103,7 @@ def run_clustering(top_n: int | None = None) -> list[Cluster]:
     if top_n is None:
         top_n = config.TOP_SIGNALS
 
+    db.clear_signals()  # 이전 클러스터링/시그널 초기화
     links = db.get_top_links_by_score(config.CLUSTER_TOP_PERCENT)
 
     if not links:
