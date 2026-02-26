@@ -18,6 +18,7 @@ from google.genai.errors import ClientError
 
 import config
 import database as db
+import stock_fetcher
 from clusterer import Cluster
 
 _client = genai.Client(api_key=config.GEMINI_API_KEY)
@@ -29,11 +30,18 @@ _SYSTEM_PROMPT = """당신은 금융·블록체인·DeFi 시장 전문 애널리
 출력 형식 (반드시 준수):
 제목: [핵심을 담은 한국어 시그널 제목]
 요약: [3문장 이내의 한국어 산문 요약]
+종목: [직접 관련된 상장 종목, 없으면 "없음"]
+
+종목 형식: 종목명(티커) — 쉼표로 구분, 최대 4개
+  예: 삼성전자(005930.KS), SK하이닉스(000660.KS), NVIDIA(NVDA), 비트코인(BTC-USD)
+  한국 코스피: 코드.KS / 코스닥: 코드.KQ / 미국 주식: 심볼 / 암호화폐: 심볼-USD
 
 규칙:
 - 제목은 반드시 "제목: "으로 시작
 - 요약은 반드시 "요약: "으로 시작
+- 종목은 반드시 "종목: "으로 시작
 - 요약은 최대 3문장, 구체적 수치·프로젝트명·시장 영향 포함
+- 직접 관련 종목이 없으면 종목: 없음
 - 광고·노이즈·일상 잡담은 완전히 무시
 - 텔레그램 메시지 원문(=커뮤니티 반응)과 기사 내용을 함께 고려"""
 
@@ -62,10 +70,11 @@ def _build_user_message(cluster: Cluster) -> str:
     )
 
 
-def _parse_response(text: str) -> tuple[str, str]:
-    """LLM 응답에서 (제목, 요약) 튜플을 파싱합니다."""
-    title = ""
-    summary = ""
+def _parse_response(text: str) -> tuple[str, str, str]:
+    """LLM 응답에서 (제목, 요약, 종목문자열) 튜플을 파싱합니다."""
+    title       = ""
+    summary     = ""
+    tickers_raw = ""
 
     for line in text.strip().splitlines():
         line = line.strip()
@@ -73,14 +82,19 @@ def _parse_response(text: str) -> tuple[str, str]:
             title = line[3:].strip()
         elif line.startswith("요약:"):
             summary = line[3:].strip()
+        elif line.startswith("종목:"):
+            tickers_raw = line[3:].strip()
 
     # 요약이 여러 줄에 걸쳐 있을 경우 처리
     if not summary:
         lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
-        body = [l for l in lines if not l.startswith("제목:") and not l.startswith("요약:")]
+        body = [
+            l for l in lines
+            if not l.startswith("제목:") and not l.startswith("요약:") and not l.startswith("종목:")
+        ]
         summary = "\n".join(body)[:500]
 
-    return title or "시그널", summary
+    return title or "시그널", summary, tickers_raw
 
 
 
@@ -104,11 +118,11 @@ def _call_model(model: str, user_msg: str) -> str:
     return resp.text or ""
 
 
-def summarize_cluster(cluster: Cluster) -> tuple[str, str]:
+def summarize_cluster(cluster: Cluster) -> tuple[str, str, str]:
     """
     모델 체인(config.CHAT_MODEL_FALLBACKS)을 순서대로 시도합니다.
     각 모델에서 429가 나오면 다음 모델로 fallback합니다.
-    Returns: (representative_title, summary_text)
+    Returns: (representative_title, summary_text, tickers_raw)
     """
     user_msg = _build_user_message(cluster)
     fallback_title = cluster.titles[0] if cluster.titles else "시그널"
@@ -132,12 +146,11 @@ def summarize_cluster(cluster: Cluster) -> tuple[str, str]:
             break
 
     print("  [!] 모든 fallback 모델 소진 — og:description으로 대체")
-    # og:description을 fallback 요약으로 사용
     fallback_summary = next(
         (d.strip()[:500] for d in cluster.descriptions if d and d.strip()),
         "(요약 정보 없음)"
     )
-    return fallback_title, fallback_summary
+    return fallback_title, fallback_summary, ""
 
 
 def run_summarization(clusters: list[Cluster]) -> None:
@@ -153,16 +166,24 @@ def run_summarization(clusters: list[Cluster]) -> None:
     print(f"[Summarizer] {len(clusters)}개 클러스터 요약 시작...")
 
     for i, cluster in enumerate(clusters, start=1):
-        title, summary = summarize_cluster(cluster)
+        title, summary, tickers_raw = summarize_cluster(cluster)
+
+        # 주가 조회
+        stocks_text = ""
+        if tickers_raw:
+            price_data = stock_fetcher.fetch_prices(tickers_raw)
+            stocks_text = stock_fetcher.format_stocks_text(price_data)
 
         db.upsert_signal(
             cluster_id=cluster.cluster_id,
             representative_title=title,
             summary_text=summary,
             total_authority_score=cluster.total_authority_score,
+            stocks_text=stocks_text,
         )
 
-        print(f"  [{i}/{len(clusters)}] 「{title}」 — {len(cluster.url_hashes)}개 링크")
+        stock_info = f"  📈 {stocks_text[:60]}" if stocks_text else ""
+        print(f"  [{i}/{len(clusters)}] 「{title}」 — {len(cluster.url_hashes)}개 링크{stock_info}")
 
     print("[Summarizer] 완료.")
 
@@ -188,6 +209,12 @@ def print_signals() -> None:
         print()
         for line in sig["summary_text"].splitlines():
             print(f"   {line}")
+        stocks = sig.get("stocks_text", "")
+        if stocks:
+            print()
+            print("   📈 관련 종목:")
+            for line in stocks.splitlines():
+                print(f"   {line}")
         print()
         print("   관련 링크:")
         for lnk in links[:5]:

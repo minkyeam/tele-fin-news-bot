@@ -89,6 +89,15 @@ def _format_signal(sig: dict, links: list[dict], emoji: str) -> str:
         if stripped:
             lines.append(_escape_html(stripped))
 
+    # 관련 종목 주가
+    stocks = sig.get("stocks_text", "")
+    if stocks:
+        lines.append("")
+        lines.append("📈 <b>관련 종목</b>")
+        for stock_line in stocks.splitlines():
+            if stock_line.strip():
+                lines.append(_escape_html(stock_line.strip()))
+
     # 출처 인라인 링크 (상위 3개)
     source_links = []
     for i, lnk in enumerate(links[:3], start=1):
