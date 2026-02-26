@@ -27,15 +27,10 @@ _SYSTEM_PROMPT = """당신은 금융·블록체인·DeFi 시장 전문 애널리
 핵심 마켓 시그널을 추출합니다.
 
 출력 형식 (반드시 준수):
-카테고리: [아래 목록 중 하나]
-제목: [30자 이내 한국어 시그널 제목]
+제목: [핵심을 담은 한국어 시그널 제목]
 요약: [3문장 이내의 한국어 산문 요약]
 
-카테고리 목록 (하나만 선택):
-반도체 | AI | BTC/ETH | DeFi | 거시경제 | 규제 | 기타
-
 규칙:
-- 카테고리는 반드시 "카테고리: "으로 시작
 - 제목은 반드시 "제목: "으로 시작
 - 요약은 반드시 "요약: "으로 시작
 - 요약은 최대 3문장, 구체적 수치·프로젝트명·시장 영향 포함
@@ -67,38 +62,25 @@ def _build_user_message(cluster: Cluster) -> str:
     )
 
 
-_VALID_CATEGORIES = {"반도체", "AI", "BTC/ETH", "DeFi", "거시경제", "규제", "기타"}
-
-
-def _parse_response(text: str) -> tuple[str, str, str]:
-    """LLM 응답에서 (카테고리, 제목, 요약) 튜플을 파싱합니다."""
-    category = ""
+def _parse_response(text: str) -> tuple[str, str]:
+    """LLM 응답에서 (제목, 요약) 튜플을 파싱합니다."""
     title = ""
     summary = ""
 
     for line in text.strip().splitlines():
         line = line.strip()
-        if line.startswith("카테고리:"):
-            category = line[5:].strip()
-        elif line.startswith("제목:"):
-            title = line[3:].strip()[:30]
+        if line.startswith("제목:"):
+            title = line[3:].strip()
         elif line.startswith("요약:"):
             summary = line[3:].strip()
 
     # 요약이 여러 줄에 걸쳐 있을 경우 처리
     if not summary:
         lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
-        body = [
-            l for l in lines
-            if not l.startswith("카테고리:") and not l.startswith("제목:") and not l.startswith("요약:")
-        ]
+        body = [l for l in lines if not l.startswith("제목:") and not l.startswith("요약:")]
         summary = "\n".join(body)[:500]
 
-    # 카테고리 유효성 검증
-    if category not in _VALID_CATEGORIES:
-        category = "기타"
-
-    return category or "기타", title or "시그널", summary
+    return title or "시그널", summary
 
 
 
@@ -122,14 +104,14 @@ def _call_model(model: str, user_msg: str) -> str:
     return resp.text or ""
 
 
-def summarize_cluster(cluster: Cluster) -> tuple[str, str, str]:
+def summarize_cluster(cluster: Cluster) -> tuple[str, str]:
     """
     모델 체인(config.CHAT_MODEL_FALLBACKS)을 순서대로 시도합니다.
     각 모델에서 429가 나오면 다음 모델로 fallback합니다.
-    Returns: (category, representative_title, summary_text)
+    Returns: (representative_title, summary_text)
     """
     user_msg = _build_user_message(cluster)
-    fallback_title = cluster.titles[0][:30] if cluster.titles else "시그널"
+    fallback_title = cluster.titles[0] if cluster.titles else "시그널"
 
     for model in config.CHAT_MODEL_FALLBACKS:
         try:
@@ -155,7 +137,7 @@ def summarize_cluster(cluster: Cluster) -> tuple[str, str, str]:
         (d.strip()[:500] for d in cluster.descriptions if d and d.strip()),
         "(요약 정보 없음)"
     )
-    return "기타", fallback_title, fallback_summary
+    return fallback_title, fallback_summary
 
 
 def run_summarization(clusters: list[Cluster]) -> None:
@@ -171,17 +153,16 @@ def run_summarization(clusters: list[Cluster]) -> None:
     print(f"[Summarizer] {len(clusters)}개 클러스터 요약 시작...")
 
     for i, cluster in enumerate(clusters, start=1):
-        category, title, summary = summarize_cluster(cluster)
+        title, summary = summarize_cluster(cluster)
 
         db.upsert_signal(
             cluster_id=cluster.cluster_id,
             representative_title=title,
             summary_text=summary,
             total_authority_score=cluster.total_authority_score,
-            category=category,
         )
 
-        print(f"  [{i}/{len(clusters)}] [{category}] 「{title}」 — {len(cluster.url_hashes)}개 링크")
+        print(f"  [{i}/{len(clusters)}] 「{title}」 — {len(cluster.url_hashes)}개 링크")
 
     print("[Summarizer] 완료.")
 

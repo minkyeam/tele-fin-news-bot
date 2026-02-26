@@ -78,12 +78,11 @@ def _make_source_link(url: str, index: int) -> str:
 
 def _format_signal(sig: dict, links: list[dict], emoji: str) -> str:
     """시그널 하나를 HTML 블록으로 변환합니다."""
-    category = _escape_html(sig.get("category") or "기타")
-    title    = _escape_html(sig.get("representative_title") or "시그널")
-    score    = sig.get("total_authority_score", 0)
-    summary  = sig.get("summary_text") or ""
+    title   = _escape_html(sig.get("representative_title") or "시그널")
+    score   = sig.get("total_authority_score", 0)
+    summary = sig.get("summary_text") or ""
 
-    lines = [f"{emoji} [<b>{category}</b>] {title}  <i>({score:.1f})</i>"]
+    lines = [f"{emoji} <b>{title}</b>  <i>({score:.1f})</i>"]
 
     for line in summary.splitlines():
         stripped = line.strip()

@@ -251,24 +251,22 @@ def clear_signals() -> None:
         conn.execute("UPDATE links SET cluster_id = NULL")
 
 def upsert_signal(cluster_id: str, representative_title: str,
-                  summary_text: str, total_authority_score: float,
-                  category: str = "기타") -> None:
+                  summary_text: str, total_authority_score: float) -> None:
     sql = """
         INSERT INTO signals
             (cluster_id, representative_title, summary_text,
-             total_authority_score, category, generated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+             total_authority_score, generated_at)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(cluster_id) DO UPDATE SET
             representative_title  = excluded.representative_title,
             summary_text          = excluded.summary_text,
             total_authority_score = excluded.total_authority_score,
-            category              = excluded.category,
             generated_at          = excluded.generated_at
     """
     with get_conn() as conn:
         conn.execute(sql, (
             cluster_id, representative_title, summary_text,
-            total_authority_score, category, datetime.utcnow().isoformat()
+            total_authority_score, datetime.utcnow().isoformat()
         ))
 
 
