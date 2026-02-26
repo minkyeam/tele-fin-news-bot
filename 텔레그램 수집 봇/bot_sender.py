@@ -98,15 +98,28 @@ def _format_signal(sig: dict, links: list[dict], emoji: str) -> str:
             if stock_line.strip():
                 lines.append(_escape_html(stock_line.strip()))
 
-    # 출처 인라인 링크 (상위 3개)
-    source_links = []
-    for i, lnk in enumerate(links[:3], start=1):
-        url = lnk.get("original_url", "")
-        if url:
-            source_links.append(_make_source_link(url, i))
-    if source_links:
-        lines.append("")
-        lines.append("출처: " + " | ".join(source_links))
+    # 소스 링크: URL 클러스터 → 출처 링크 / 텍스트 클러스터 → t.me 채널 링크
+    tme_raw = sig.get("tme_links", "")
+    if tme_raw and not links:
+        # 바이럴 텍스트 시그널: t.me 메시지 링크
+        tme_entries = [l.strip() for l in tme_raw.splitlines() if l.strip()]
+        tme_tags = [
+            f'<a href="{url}">채널 {i}</a>'
+            for i, url in enumerate(tme_entries[:5], start=1)
+        ]
+        if tme_tags:
+            lines.append("")
+            lines.append("📣 채널: " + " | ".join(tme_tags))
+    else:
+        # URL 클러스터: 출처 링크
+        source_links = []
+        for i, lnk in enumerate(links[:3], start=1):
+            url = lnk.get("original_url", "")
+            if url:
+                source_links.append(_make_source_link(url, i))
+        if source_links:
+            lines.append("")
+            lines.append("출처: " + " | ".join(source_links))
 
     return "\n".join(lines)
 
@@ -114,24 +127,34 @@ def _format_signal(sig: dict, links: list[dict], emoji: str) -> str:
 def build_messages(signals: list[dict]) -> list[str]:
     """
     시그널 목록 → 전송할 HTML 메시지 문자열 리스트.
+    URL 시그널과 바이럴 텍스트 시그널을 별도 섹션으로 분리합니다.
     4000자 초과 시 자동으로 분할합니다.
     """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     total = len(signals)
 
-    header = (
-        f"━━━ 📊 TMSA 마켓 시그널 리포트 ⏰ {now} ━━━"
-    )
+    # URL 클러스터 vs 바이럴 텍스트 분리
+    url_signals  = [e for e in signals if e["links"] or not e["signal"].get("tme_links")]
+    text_signals = [e for e in signals if not e["links"] and e["signal"].get("tme_links")]
+
+    header = f"━━━ 📊 TMSA 마켓 시그널 리포트 ⏰ {now} ━━━"
     footer = (
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🤖 TMSA  |  Signals: {total}  |  Powered by Gemini"
     )
 
     blocks: list[str] = [header]
-    for rank, entry in enumerate(signals, start=1):
-        emoji = _authority_emoji(rank, total)
-        block = _format_signal(entry["signal"], entry["links"], emoji)
-        blocks.append(block)
+
+    url_total = len(url_signals)
+    for rank, entry in enumerate(url_signals, start=1):
+        emoji = _authority_emoji(rank, url_total)
+        blocks.append(_format_signal(entry["signal"], entry["links"], emoji))
+
+    if text_signals:
+        blocks.append("━━━ 📣 바이럴 메시지 시그널 ━━━")
+        for entry in text_signals:
+            blocks.append(_format_signal(entry["signal"], entry["links"], "📣"))
+
     blocks.append(footer)
 
     # 4000자 단위로 분할

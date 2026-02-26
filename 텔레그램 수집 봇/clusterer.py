@@ -36,6 +36,8 @@ class Cluster:
     titles: list[str] = field(default_factory=list)
     descriptions: list[str] = field(default_factory=list)
     post_texts: list[str] = field(default_factory=list)   # 실제 텔레그램 메시지 본문
+    post_ids: list[str] = field(default_factory=list)     # 텍스트 전용 클러스터에서 t.me 링크 생성에 사용
+    channel_ids: list[str] = field(default_factory=list)  # 텍스트 전용 클러스터 채널 추적
     total_authority_score: float = 0.0
 
 
@@ -169,3 +171,62 @@ def run_clustering(top_n: int | None = None) -> list[Cluster]:
 
     print(f"[Clusterer] 완료 — 상위 {len(clusters)}개 클러스터 반환 (전체 {len(cluster_map)}개 중)")
     return clusters
+
+
+def run_text_clustering(top_n: int = 5) -> list[Cluster]:
+    """
+    URL이 없는 포스트들을 임베딩 + DBSCAN으로 클러스터링합니다.
+    여러 채널에서 동시에 등장하는 바이럴 텍스트 시그널을 탐지합니다.
+
+    조건:
+      - URL 링크가 없는 포스트
+      - 최소 50자 이상의 내용
+      - 2개 이상의 서로 다른 채널에서 등장
+    """
+    rows = db.get_posts_without_links(min_length=50, collect_hours=config.COLLECT_HOURS)
+    if not rows:
+        print("[Clusterer-Text] 텍스트 전용 포스트 없음")
+        return []
+
+    print(f"[Clusterer-Text] 텍스트 전용 포스트: {len(rows)}개")
+
+    texts = [row["content"][:500] for row in rows]  # 500자 절단으로 임베딩 품질 유지
+
+    vecs = _embed_texts(texts)
+    vecs = normalize(vecs)
+
+    db_scan = DBSCAN(
+        eps=config.DBSCAN_EPS,
+        min_samples=config.DBSCAN_MIN_SAMPLES,
+        metric="cosine",
+        algorithm="brute",
+        n_jobs=-1,
+    )
+    labels = db_scan.fit_predict(vecs)
+    n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+    print(f"[Clusterer-Text] 1차 클러스터: {n_clusters}개 (노이즈 제외)")
+
+    cluster_map: dict[int, Cluster] = {}
+
+    for idx, (row, label) in enumerate(zip(rows, labels)):
+        if label == -1:
+            continue  # 단독 포스트는 바이럴 아님 — 제외
+
+        if label not in cluster_map:
+            cluster_map[label] = Cluster(cluster_id=str(uuid.uuid4()))
+
+        cluster = cluster_map[label]
+        cluster.post_texts.append(row["content"])
+        cluster.post_ids.append(row["post_id"])
+        cluster.channel_ids.append(row["channel_id"])
+        cluster.total_authority_score += row["views"] or 0.0
+
+    # 바이럴 조건: 2개 이상의 서로 다른 채널에서 등장
+    viral = [
+        c for c in cluster_map.values()
+        if len(set(c.channel_ids)) >= 2
+    ]
+
+    result = sorted(viral, key=lambda c: c.total_authority_score, reverse=True)[:top_n]
+    print(f"[Clusterer-Text] 바이럴 클러스터 {len(result)}개 반환 (전체 {len(cluster_map)}개 중)")
+    return result

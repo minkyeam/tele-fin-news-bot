@@ -183,7 +183,8 @@ async def _collect_channel(
         channel_id=channel_id,
         name=name,
         subscriber_count=subscriber_count,
-        category=""
+        category="",
+        username=getattr(entity, "username", "") or "",
     )
     print(f"  [채널] {name} ({username_str}, 구독자={subscriber_count:,})")
 

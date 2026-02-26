@@ -15,7 +15,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 import config
@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS channels (
     channel_id       TEXT PRIMARY KEY,
     name             TEXT NOT NULL,
     subscriber_count INTEGER DEFAULT 0,
-    category         TEXT
+    category         TEXT,
+    username         TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS posts (
@@ -64,6 +65,7 @@ CREATE TABLE IF NOT EXISTS signals (
     total_authority_score REAL DEFAULT 0.0,
     category              TEXT DEFAULT '기타',
     stocks_text           TEXT DEFAULT '',
+    tme_links             TEXT DEFAULT '',
     generated_at          TEXT NOT NULL
 );
 
@@ -95,28 +97,36 @@ def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(DDL)
         # 기존 DB 마이그레이션 — 누락 컬럼 추가
-        cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)")}
-        if "category" not in cols:
+        sig_cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)")}
+        if "category" not in sig_cols:
             conn.execute("ALTER TABLE signals ADD COLUMN category TEXT DEFAULT '기타'")
-        if "stocks_text" not in cols:
+        if "stocks_text" not in sig_cols:
             conn.execute("ALTER TABLE signals ADD COLUMN stocks_text TEXT DEFAULT ''")
+        if "tme_links" not in sig_cols:
+            conn.execute("ALTER TABLE signals ADD COLUMN tme_links TEXT DEFAULT ''")
+
+        ch_cols = {row[1] for row in conn.execute("PRAGMA table_info(channels)")}
+        if "username" not in ch_cols:
+            conn.execute("ALTER TABLE channels ADD COLUMN username TEXT DEFAULT ''")
     print(f"[DB] 초기화 완료 → {config.DB_PATH}")
 
 
 # ─── Channel CRUD ────────────────────────────────────────────────────────────
 
 def upsert_channel(channel_id: str, name: str,
-                   subscriber_count: int, category: str = "") -> None:
+                   subscriber_count: int, category: str = "",
+                   username: str = "") -> None:
     sql = """
-        INSERT INTO channels (channel_id, name, subscriber_count, category)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO channels (channel_id, name, subscriber_count, category, username)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(channel_id) DO UPDATE SET
             name             = excluded.name,
             subscriber_count = excluded.subscriber_count,
-            category         = excluded.category
+            category         = excluded.category,
+            username         = excluded.username
     """
     with get_conn() as conn:
-        conn.execute(sql, (channel_id, name, subscriber_count, category))
+        conn.execute(sql, (channel_id, name, subscriber_count, category, username))
 
 
 def get_channel(channel_id: str) -> Optional[sqlite3.Row]:
@@ -255,23 +265,25 @@ def clear_signals() -> None:
 
 def upsert_signal(cluster_id: str, representative_title: str,
                   summary_text: str, total_authority_score: float,
-                  stocks_text: str = "") -> None:
+                  stocks_text: str = "", tme_links: str = "") -> None:
     sql = """
         INSERT INTO signals
             (cluster_id, representative_title, summary_text,
-             total_authority_score, stocks_text, generated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+             total_authority_score, stocks_text, tme_links, generated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(cluster_id) DO UPDATE SET
             representative_title  = excluded.representative_title,
             summary_text          = excluded.summary_text,
             total_authority_score = excluded.total_authority_score,
             stocks_text           = excluded.stocks_text,
+            tme_links             = excluded.tme_links,
             generated_at          = excluded.generated_at
     """
     with get_conn() as conn:
         conn.execute(sql, (
             cluster_id, representative_title, summary_text,
-            total_authority_score, stocks_text, datetime.utcnow().isoformat()
+            total_authority_score, stocks_text, tme_links,
+            datetime.utcnow().isoformat()
         ))
 
 
@@ -298,3 +310,42 @@ def get_signals_with_links() -> list[dict]:
                 "links": [dict(l) for l in links]
             })
         return result
+
+
+def get_posts_without_links(min_length: int = 50,
+                            collect_hours: int | None = None) -> list[sqlite3.Row]:
+    """
+    URL 링크가 없는 포스트를 반환합니다.
+    텍스트 전용 바이럴 클러스터링에 사용됩니다.
+    """
+    params: list = [min_length]
+    cutoff_clause = ""
+    if collect_hours is not None:
+        cutoff = datetime.utcnow() - timedelta(hours=collect_hours)
+        cutoff_clause = "AND p.timestamp >= ?"
+        params.append(cutoff.isoformat())
+    params.append(5000)
+
+    sql = f"""
+        SELECT p.post_id, p.channel_id, p.content, p.views
+        FROM posts p
+        WHERE NOT EXISTS (
+            SELECT 1 FROM post_links pl WHERE pl.post_id = p.post_id
+        )
+          AND p.content IS NOT NULL
+          AND LENGTH(p.content) >= ?
+          {cutoff_clause}
+        ORDER BY p.views DESC
+        LIMIT ?
+    """
+    with get_conn() as conn:
+        return conn.execute(sql, params).fetchall()
+
+
+def get_channel_username(channel_id: str) -> str:
+    """채널 username을 반환합니다 (없으면 빈 문자열)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT username FROM channels WHERE channel_id = ?", (channel_id,)
+        ).fetchone()
+    return (row["username"] or "") if row else ""

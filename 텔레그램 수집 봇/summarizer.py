@@ -98,18 +98,39 @@ def _parse_response(text: str) -> tuple[str, str, str]:
 
 
 
-def _call_model(model: str, user_msg: str) -> str:
+_TEXT_SYSTEM_PROMPT = """당신은 금융·블록체인·DeFi 시장 전문 애널리스트입니다.
+여러 텔레그램 채널에서 동시에 확산되는 바이럴 메시지를 분석하여
+핵심 마켓 정보를 추출합니다.
+
+출력 형식 (반드시 준수):
+제목: [핵심을 담은 한국어 시그널 제목]
+요약: [3문장 이내의 한국어 산문 요약]
+종목: [직접 관련된 상장 종목 (최대 4개, 없으면 "없음")]
+
+종목 형식: 종목명(티커) — 쉼표로 구분
+  예: 삼성전자(005930.KS), NVIDIA(NVDA), 비트코인(BTC-USD)
+  한국 코스피: 코드.KS / 코스닥: 코드.KQ / 미국 주식: 심볼 / 암호화폐: 심볼-USD
+
+규칙:
+- 제목은 반드시 "제목: "으로 시작
+- 요약은 반드시 "요약: "으로 시작
+- 종목은 반드시 "종목: "으로 시작
+- 요약은 최대 3문장, 구체적 수치·프로젝트명·시장 영향 포함
+- 광고·노이즈·일상 잡담은 완전히 무시"""
+
+
+def _call_model(model: str, user_msg: str,
+                system_prompt: str = _SYSTEM_PROMPT) -> str:
     """단일 모델 호출. Gemma는 system_instruction 미지원이므로 프롬프트에 병합."""
     is_gemma = model.startswith("gemma")
 
     if is_gemma:
-        # Gemma: system + user를 하나의 텍스트로 합침
-        combined = f"{_SYSTEM_PROMPT}\n\n---\n\n{user_msg}"
+        combined = f"{system_prompt}\n\n---\n\n{user_msg}"
         cfg = types.GenerateContentConfig(temperature=0.3, max_output_tokens=400)
         resp = _client.models.generate_content(model=model, contents=combined, config=cfg)
     else:
         cfg = types.GenerateContentConfig(
-            system_instruction=_SYSTEM_PROMPT,
+            system_instruction=system_prompt,
             temperature=0.3,
             max_output_tokens=400,
         )
@@ -186,6 +207,112 @@ def run_summarization(clusters: list[Cluster]) -> None:
         print(f"  [{i}/{len(clusters)}] 「{title}」 — {len(cluster.url_hashes)}개 링크{stock_info}")
 
     print("[Summarizer] 완료.")
+
+
+# ── 텍스트 전용 바이럴 클러스터 요약 ──────────────────────────────────────────
+
+def _build_text_user_message(cluster: Cluster) -> str:
+    """URL 없는 바이럴 텍스트 클러스터의 LLM 입력 메시지를 구성합니다."""
+    n_channels = len(set(cluster.channel_ids))
+    posts = [
+        f"{i}. {t[:300].strip()}"
+        for i, t in enumerate(cluster.post_texts[:8], start=1)
+    ]
+    post_block = "\n\n".join(posts) if posts else "(내용 없음)"
+    return (
+        f"바이럴 채널 수: {n_channels}개  |  포스트 수: {len(cluster.post_texts)}개\n"
+        f"총 조회수: {cluster.total_authority_score:.0f}\n"
+        f"\n=== 채널 메시지 원문 ===\n{post_block}"
+    )
+
+
+def _build_tme_links(cluster: Cluster) -> str:
+    """텍스트 클러스터의 post_ids에서 채널별 t.me 링크를 생성합니다."""
+    links: list[str] = []
+    seen_channels: set[str] = set()
+
+    for post_id, channel_id in zip(cluster.post_ids, cluster.channel_ids):
+        if channel_id in seen_channels or len(links) >= 5:
+            continue
+        seen_channels.add(channel_id)
+
+        # post_id = "{channel_id}_{message_id}"
+        parts = post_id.split("_", 1)
+        msg_id = parts[1] if len(parts) == 2 else ""
+
+        username = db.get_channel_username(channel_id)
+        if username:
+            links.append(f"https://t.me/{username.lstrip('@')}/{msg_id}")
+        else:
+            # 비공개 채널: -100 접두어 제거 후 t.me/c/ 형식
+            cid = channel_id.lstrip("-")
+            if cid.startswith("100"):
+                cid = cid[3:]
+            links.append(f"https://t.me/c/{cid}/{msg_id}")
+
+    return "\n".join(links)
+
+
+def summarize_text_cluster(cluster: Cluster) -> tuple[str, str, str]:
+    """
+    텍스트 전용 바이럴 클러스터를 요약합니다.
+    Returns: (representative_title, summary_text, tickers_raw)
+    """
+    user_msg = _build_text_user_message(cluster)
+    fallback_title = (cluster.post_texts[0][:30] + "...") if cluster.post_texts else "바이럴"
+
+    for model in config.CHAT_MODEL_FALLBACKS:
+        try:
+            raw = _call_model(model, user_msg, system_prompt=_TEXT_SYSTEM_PROMPT)
+            if model != config.CHAT_MODEL:
+                print(f"    (fallback 성공: {model})")
+            return _parse_response(raw)
+
+        except ClientError as e:
+            if "429" in str(e)[:20]:
+                print(f"  [429] {model} 한도 초과 → 다음 모델로 즉시 fallback")
+            else:
+                print(f"  [!] {model} 호출 실패: {str(e)[:100]}")
+                break
+
+        except Exception as e:
+            print(f"  [!] {model} 오류: {e}")
+            break
+
+    fallback_summary = cluster.post_texts[0][:500] if cluster.post_texts else "(요약 정보 없음)"
+    return fallback_title, fallback_summary, ""
+
+
+def run_text_summarization(text_clusters: list[Cluster]) -> None:
+    """바이럴 텍스트 클러스터를 요약하고 Signal 테이블에 저장합니다."""
+    if not text_clusters:
+        return
+
+    print(f"[Summarizer] 바이럴 텍스트 {len(text_clusters)}개 클러스터 요약...")
+
+    for i, cluster in enumerate(text_clusters, start=1):
+        title, summary, tickers_raw = summarize_text_cluster(cluster)
+
+        stocks_text = ""
+        if tickers_raw:
+            price_data = stock_fetcher.fetch_prices(tickers_raw)
+            stocks_text = stock_fetcher.format_stocks_text(price_data)
+
+        tme_links = _build_tme_links(cluster)
+
+        db.upsert_signal(
+            cluster_id=cluster.cluster_id,
+            representative_title=title,
+            summary_text=summary,
+            total_authority_score=cluster.total_authority_score,
+            stocks_text=stocks_text,
+            tme_links=tme_links,
+        )
+
+        n_ch = len(set(cluster.channel_ids))
+        print(f"  [{i}/{len(text_clusters)}] [바이럴/{n_ch}채널] 「{title}」")
+
+    print("[Summarizer] 바이럴 텍스트 요약 완료.")
 
 
 def print_signals() -> None:
