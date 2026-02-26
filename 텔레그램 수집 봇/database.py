@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS signals (
     representative_title  TEXT,
     summary_text          TEXT,
     total_authority_score REAL DEFAULT 0.0,
+    category              TEXT DEFAULT '기타',
     generated_at          TEXT NOT NULL
 );
 
@@ -92,6 +93,10 @@ def init_db() -> None:
     """스키마를 생성합니다. 이미 존재하면 무시됩니다."""
     with get_conn() as conn:
         conn.executescript(DDL)
+        # 기존 DB에 category 컬럼이 없으면 추가 (마이그레이션)
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)")}
+        if "category" not in cols:
+            conn.execute("ALTER TABLE signals ADD COLUMN category TEXT DEFAULT '기타'")
     print(f"[DB] 초기화 완료 → {config.DB_PATH}")
 
 
@@ -246,22 +251,24 @@ def clear_signals() -> None:
         conn.execute("UPDATE links SET cluster_id = NULL")
 
 def upsert_signal(cluster_id: str, representative_title: str,
-                  summary_text: str, total_authority_score: float) -> None:
+                  summary_text: str, total_authority_score: float,
+                  category: str = "기타") -> None:
     sql = """
         INSERT INTO signals
             (cluster_id, representative_title, summary_text,
-             total_authority_score, generated_at)
-        VALUES (?, ?, ?, ?, ?)
+             total_authority_score, category, generated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(cluster_id) DO UPDATE SET
             representative_title  = excluded.representative_title,
             summary_text          = excluded.summary_text,
             total_authority_score = excluded.total_authority_score,
+            category              = excluded.category,
             generated_at          = excluded.generated_at
     """
     with get_conn() as conn:
         conn.execute(sql, (
             cluster_id, representative_title, summary_text,
-            total_authority_score, datetime.utcnow().isoformat()
+            total_authority_score, category, datetime.utcnow().isoformat()
         ))
 
 
