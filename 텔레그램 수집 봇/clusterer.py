@@ -81,11 +81,14 @@ def _embed_texts(texts: list[str]) -> np.ndarray:
                 print(f"  (임베딩 fallback 성공: {model})")
             return vecs
         except ClientError as e:
-            if "429" in str(e)[:20]:
+            err = str(e)
+            if err.startswith("401") or err.startswith("403"):
+                print(f"  [!] {model} 임베딩 인증 오류 — API 키 확인 필요")
+                break  # 인증 오류는 다른 API 모델도 동일하게 실패
+            elif "429" in err or "RESOURCE_EXHAUSTED" in err:
                 print(f"  [429] {model} 임베딩 한도 초과 → 다음으로 즉시 fallback")
             else:
-                print(f"  [!] {model} 임베딩 오류: {str(e)[:80]}")
-                break
+                print(f"  [!] {model} 임베딩 오류: {err[:80]} → 다음으로 fallback")
         except Exception as e:
             print(f"  [!] {model} 임베딩 오류: {e}")
             if is_local:

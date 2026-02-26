@@ -139,10 +139,20 @@ def _call_model(model: str, user_msg: str,
     return resp.text or ""
 
 
+def _is_rate_limit(e: ClientError) -> bool:
+    err = str(e)
+    return "429" in err or "RESOURCE_EXHAUSTED" in err
+
+
+def _is_auth_error(e: ClientError) -> bool:
+    err = str(e)
+    return err.startswith("401") or err.startswith("403")
+
+
 def summarize_cluster(cluster: Cluster) -> tuple[str, str, str]:
     """
     모델 체인(config.CHAT_MODEL_FALLBACKS)을 순서대로 시도합니다.
-    각 모델에서 429가 나오면 다음 모델로 fallback합니다.
+    429 또는 모델 오류 시 다음 모델로 fallback합니다.
     Returns: (representative_title, summary_text, tickers_raw)
     """
     user_msg = _build_user_message(cluster)
@@ -156,15 +166,16 @@ def summarize_cluster(cluster: Cluster) -> tuple[str, str, str]:
             return _parse_response(raw)
 
         except ClientError as e:
-            if "429" in str(e)[:20]:
+            if _is_auth_error(e):
+                print(f"  [!] {model} 인증 오류 — API 키 확인 필요")
+                break  # 인증 오류는 다른 모델도 동일하게 실패
+            elif _is_rate_limit(e):
                 print(f"  [429] {model} 한도 초과 → 다음 모델로 즉시 fallback")
             else:
-                print(f"  [!] {model} 호출 실패: {str(e)[:100]}")
-                break  # 429 외 오류는 다음 모델 시도 무의미
+                print(f"  [!] {model} 오류: {str(e)[:100]} → 다음 모델로 fallback")
 
         except Exception as e:
-            print(f"  [!] {model} 오류: {e}")
-            break
+            print(f"  [!] {model} 오류: {e} → 다음 모델로 fallback")
 
     print("  [!] 모든 fallback 모델 소진 — og:description으로 대체")
     fallback_summary = next(
@@ -269,15 +280,16 @@ def summarize_text_cluster(cluster: Cluster) -> tuple[str, str, str]:
             return _parse_response(raw)
 
         except ClientError as e:
-            if "429" in str(e)[:20]:
+            if _is_auth_error(e):
+                print(f"  [!] {model} 인증 오류 — API 키 확인 필요")
+                break
+            elif _is_rate_limit(e):
                 print(f"  [429] {model} 한도 초과 → 다음 모델로 즉시 fallback")
             else:
-                print(f"  [!] {model} 호출 실패: {str(e)[:100]}")
-                break
+                print(f"  [!] {model} 오류: {str(e)[:100]} → 다음 모델로 fallback")
 
         except Exception as e:
-            print(f"  [!] {model} 오류: {e}")
-            break
+            print(f"  [!] {model} 오류: {e} → 다음 모델로 fallback")
 
     fallback_summary = cluster.post_texts[0][:500] if cluster.post_texts else "(요약 정보 없음)"
     return fallback_title, fallback_summary, ""
