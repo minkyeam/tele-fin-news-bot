@@ -24,6 +24,10 @@ AUTHORITY_W2 = float(os.getenv("AUTHORITY_W2", "0.3"))
 COLLECT_HOURS       = int(os.getenv("COLLECT_HOURS", "24"))
 CLUSTER_TOP_PERCENT = int(os.getenv("CLUSTER_TOP_PERCENT", "20"))
 
+# ── 자동 실행 (--listen 모드) ─────────────────────────────────────────────────
+# 0 이면 비활성화. 예: AUTO_RUN_HOURS=8 → 8시간마다 파이프라인 자동 실행
+AUTO_RUN_HOURS = int(os.getenv("AUTO_RUN_HOURS", "0"))
+
 # ── DBSCAN ───────────────────────────────────────────────────────────────────
 DBSCAN_EPS         = float(os.getenv("DBSCAN_EPS", "0.55"))
 DBSCAN_MIN_SAMPLES = int(os.getenv("DBSCAN_MIN_SAMPLES", "2"))

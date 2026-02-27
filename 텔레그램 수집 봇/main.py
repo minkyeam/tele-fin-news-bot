@@ -11,6 +11,7 @@ TMSA CLI 진입점.
   python main.py --score-only       # 스코어링만 재실행
   python main.py --send             # DB에 저장된 시그널을 텔레그램 봇으로 전송
   python main.py --show             # 저장된 시그널 터미널 출력
+  python main.py --listen           # 봇 명령어 수신 + 자동 실행 데몬 시작
 """
 
 from __future__ import annotations
@@ -23,11 +24,16 @@ import scorer
 import clusterer
 import summarizer
 import bot_sender
+import bot_listener
 import config
 
 
 def main() -> None:
     args = sys.argv[1:]
+
+    if "--listen" in args:
+        asyncio.run(bot_listener.start_listener())
+        return
 
     if "--show" in args:
         summarizer.print_signals()
