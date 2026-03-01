@@ -20,6 +20,7 @@ bot_listener.py
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import datetime, timezone
 
 import httpx
@@ -160,6 +161,24 @@ async def _auto_run_loop(client: httpx.AsyncClient) -> None:
         await _handle_run(client)
 
 
+# ── Render 헬스체크 서버 ───────────────────────────────────────────────────────
+
+async def _health_server() -> None:
+    """Render Web Service용 최소 HTTP 서버 (포트 바인딩)."""
+    port = int(os.environ.get("PORT", 8080))
+
+    async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.read(1024)
+        writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
+        await writer.drain()
+        writer.close()
+
+    server = await asyncio.start_server(_handle, "0.0.0.0", port)
+    print(f"[Health] Listening on port {port}")
+    async with server:
+        await server.serve_forever()
+
+
 # ── 진입점 ────────────────────────────────────────────────────────────────────
 
 async def start_listener() -> None:
@@ -170,7 +189,10 @@ async def start_listener() -> None:
         return
 
     async with httpx.AsyncClient() as client:
-        tasks = [asyncio.create_task(_command_loop(client))]
+        tasks = [
+            asyncio.create_task(_health_server()),
+            asyncio.create_task(_command_loop(client)),
+        ]
         if config.AUTO_RUN_HOURS > 0:
             tasks.append(asyncio.create_task(_auto_run_loop(client)))
         try:
