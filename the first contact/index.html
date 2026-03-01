@@ -231,7 +231,7 @@
       <h1 class="title">Little Hacker's Quest - Voice Edition</h1>
       <div class="controls">
         <label>
-          <input id="letterSoundToggle" type="checkbox" />
+          <input id="letterSoundToggle" type="checkbox" checked />
           키 입력 알파벳 읽기
         </label>
       </div>
@@ -290,8 +290,8 @@
 `,
         descBefore: '방이 아주 어두워 보여요.',
         descAfter: '우와! 방이 환하게 밝아졌어요.',
-        enterTTS: '방이 너무 어둡네요! ON을 입력해서 불을 켜볼까요? O, N을 순서대로 눌러보세요.',
-        successTTS: '정답이에요! 방이 정말 밝아졌어요!'
+        contextTTS: '방이 너무 어두워요. 불을 켜 주면 좋겠어요.',
+        rewardTTS: '우와, 성공이야! 방이 정말 환해졌네. 아주 잘했어!'
       },
       {
         title: 'Lv.2 배고픈 강아지',
@@ -313,8 +313,8 @@
 `,
         descBefore: '강아지 초코가 배가 고파 보여요.',
         descAfter: '초코가 맛있게 먹고 하트를 보여줘요!',
-        enterTTS: '강아지 초코가 배가 고픈가 봐요. FEED라고 말하며 밥을 줄까요? F, E, E, D를 입력해요.',
-        successTTS: '초코가 정말 맛있게 먹네요! 멍멍!'
+        contextTTS: '강아지 초코가 배가 고픈가 봐요. 밥을 주면 기뻐할 거예요.',
+        rewardTTS: '정답! 초코가 정말 맛있게 먹고 있어. 멍멍!'
       },
       {
         title: 'Lv.3 잠든 로봇',
@@ -334,8 +334,8 @@
 `,
         descBefore: '로봇이 잠들어 있어요.',
         descAfter: '로봇이 깨어나서 인사해요!',
-        enterTTS: '로봇이 잠들어 있어요. WAKE를 입력해서 깨워봐요. W, A, K, E!',
-        successTTS: '안녕? 로봇이 일어났어요! 같이 놀 준비가 됐대요.'
+        contextTTS: '로봇이 잠들어 있어요. 살짝 깨워 볼까요?',
+        rewardTTS: '멋져! 로봇이 눈을 뜨고 인사했어. 이제 같이 놀 수 있어!'
       }
     ];
 
@@ -359,20 +359,66 @@
     let currentLevel = 0;
     let gameStarted = false;
     let koreanVoice = null;
+    let lastLetterSpokenAt = 0;
+
+    const letterKo = {
+      A: '에이',
+      B: '비',
+      C: '씨',
+      D: '디',
+      E: '이',
+      F: '에프',
+      G: '지',
+      H: '에이치',
+      I: '아이',
+      J: '제이',
+      K: '케이',
+      L: '엘',
+      M: '엠',
+      N: '엔',
+      O: '오',
+      P: '피',
+      Q: '큐',
+      R: '알',
+      S: '에스',
+      T: '티',
+      U: '유',
+      V: '브이',
+      W: '더블유',
+      X: '엑스',
+      Y: '와이',
+      Z: '지'
+    };
+
+    function commandToSpellingKo(command) {
+      return command
+        .toUpperCase()
+        .split('')
+        .map(letter => letterKo[letter] || letter)
+        .join(', ');
+    }
+
+    function buildIntroTTS(level) {
+      const commandUpper = level.command.toUpperCase();
+      const spellingKo = commandToSpellingKo(level.command);
+      return `${level.contextTTS} 정답 명령어는 ${commandUpper}. 천천히 눌러보자. ${spellingKo}.`;
+    }
 
     function pickKoreanVoice() {
       const voices = speechSynthesis.getVoices();
-      koreanVoice = voices.find(v => /ko-KR/i.test(v.lang))
+      koreanVoice = voices.find(v => /ko-KR/i.test(v.lang) && /google|enhanced|premium/i.test(v.name))
+        || voices.find(v => /ko-KR/i.test(v.lang))
         || voices.find(v => /korean|한국/i.test(v.name))
         || null;
     }
 
     function speak(text, options = {}) {
       if (!gameStarted || !('speechSynthesis' in window)) return;
-      speechSynthesis.cancel();
+      const interrupt = options.interrupt ?? true;
+      if (interrupt) speechSynthesis.cancel();
       const utter = new SpeechSynthesisUtterance(text);
       utter.lang = 'ko-KR';
-      utter.rate = options.rate ?? 0.95;
+      utter.rate = options.rate ?? 0.9;
       utter.pitch = options.pitch ?? 1.0;
       if (koreanVoice) utter.voice = koreanVoice;
       speechSynthesis.speak(utter);
@@ -389,11 +435,11 @@
       ui.sceneArt.textContent = level.artBefore;
       ui.sceneDesc.textContent = level.descBefore;
       ui.commandText.textContent = level.command.toUpperCase();
-      ui.spellingText.textContent = `철자 힌트: ${level.spelling}`;
+      ui.spellingText.textContent = `철자 힌트: ${level.spelling} (${commandToSpellingKo(level.command)})`;
       ui.commandInput.value = '';
       ui.commandInput.focus();
       setStatus('목소리를 듣고 알파벳을 찾아 입력해보세요.');
-      speak(level.enterTTS);
+      speak(buildIntroTTS(level), { rate: 0.88 });
     }
 
     function completeLevel() {
@@ -401,7 +447,7 @@
       ui.sceneArt.textContent = level.artAfter;
       ui.sceneDesc.textContent = level.descAfter;
       setStatus('성공! 다음 레벨로 이동할게요.', 'ok');
-      speak(level.successTTS);
+      speak(level.rewardTTS, { rate: 0.9 });
 
       setTimeout(() => {
         currentLevel += 1;
@@ -409,7 +455,7 @@
           ui.doneBox.textContent = '모든 미션 완료! 너는 오늘의 꼬마 해커야!';
           ui.doneBox.classList.remove('hidden');
           setStatus('끝! 다시 하려면 페이지를 새로고침하세요.', 'ok');
-          speak('모든 미션을 성공했어요! 너는 오늘의 꼬마 해커야!');
+          speak('모든 미션을 성공했어요! 오늘의 꼬마 해커로 임명!', { rate: 0.9 });
           ui.submitBtn.disabled = true;
           ui.repeatBtn.disabled = true;
           ui.commandInput.disabled = true;
@@ -428,7 +474,7 @@
         completeLevel();
       } else {
         setStatus('조금 달라요. 힌트를 다시 들어볼까요?', 'err');
-        speak(`괜찮아요. 다시 해봐요. ${level.command.toUpperCase()}! ${level.spelling}`);
+        speak(`괜찮아, 다시 해보자. 정답은 ${level.command.toUpperCase()}. ${commandToSpellingKo(level.command)}.`, { rate: 0.88 });
       }
     }
 
@@ -436,8 +482,11 @@
       if (!ui.letterSoundToggle.checked || !gameStarted) return;
       if (event.key.length !== 1) return;
       if (!/[a-z]/i.test(event.key)) return;
+      const now = Date.now();
+      if (now - lastLetterSpokenAt < 80) return;
+      lastLetterSpokenAt = now;
       const letter = event.key.toUpperCase();
-      speak(`${letter}`, { rate: 0.8 });
+      speak(letterKo[letter] || letter, { rate: 0.82, pitch: 1.04, interrupt: false });
     }
 
     ui.startBtn.addEventListener('click', () => {
@@ -451,7 +500,7 @@
     ui.submitBtn.addEventListener('click', handleSubmit);
     ui.repeatBtn.addEventListener('click', () => {
       if (currentLevel < levels.length) {
-        speak(levels[currentLevel].enterTTS);
+        speak(buildIntroTTS(levels[currentLevel]), { rate: 0.88 });
       }
     });
 
