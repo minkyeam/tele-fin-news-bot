@@ -9,9 +9,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Telegram ─────────────────────────────────────────────────────────────────
-TELEGRAM_API_ID   = int(os.environ["TELEGRAM_API_ID"])
-TELEGRAM_API_HASH = os.environ["TELEGRAM_API_HASH"]
-TELEGRAM_PHONE    = os.environ["TELEGRAM_PHONE"]
+TELEGRAM_API_ID     = int(os.environ["TELEGRAM_API_ID"])
+TELEGRAM_API_HASH   = os.environ["TELEGRAM_API_HASH"]
+TELEGRAM_PHONE      = os.getenv("TELEGRAM_PHONE", "")       # 세션 생성 시에만 필요
+TG_SESSION_STRING   = os.getenv("TG_SESSION_STRING", "")    # Render 등 클라우드 배포용
 
 # ── Google Gemini ─────────────────────────────────────────────────────────────
 GEMINI_API_KEY    = os.environ["GEMINI_API_KEY"]

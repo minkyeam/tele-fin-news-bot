@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 import httpx
 from bs4 import BeautifulSoup
 from telethon import TelegramClient
+from telethon.sessions import StringSession
 from telethon.tl.types import Channel
 
 import config
@@ -115,8 +116,10 @@ async def collect(
     db.init_db()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=config.COLLECT_HOURS)
 
+    # 클라우드 배포: TG_SESSION_STRING 사용 / 로컬: 파일 세션 사용
+    _session = StringSession(config.TG_SESSION_STRING) if config.TG_SESSION_STRING else "tmsa_session"
     async with TelegramClient(
-        "tmsa_session",
+        _session,
         config.TELEGRAM_API_ID,
         config.TELEGRAM_API_HASH
     ) as tg:
