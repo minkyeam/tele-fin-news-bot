@@ -141,17 +141,22 @@ def _call_model(model: str, user_msg: str,
                 system_prompt: str = _SYSTEM_PROMPT) -> str:
     """단일 모델 호출. Gemma는 system_instruction 미지원이므로 프롬프트에 병합."""
     is_gemma = model.startswith("gemma")
+    # thinking 지원 모델(gemini-2.5-*)은 thought_signature 파트를 생성해 경고를 유발하므로 비활성화
+    is_thinking_model = "2.5" in model
 
     if is_gemma:
         combined = f"{system_prompt}\n\n---\n\n{user_msg}"
         cfg = types.GenerateContentConfig(temperature=0.3, max_output_tokens=700)
         resp = _client.models.generate_content(model=model, contents=combined, config=cfg)
     else:
-        cfg = types.GenerateContentConfig(
+        cfg_kwargs: dict = dict(
             system_instruction=system_prompt,
             temperature=0.3,
             max_output_tokens=700,
         )
+        if is_thinking_model:
+            cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+        cfg = types.GenerateContentConfig(**cfg_kwargs)
         resp = _client.models.generate_content(model=model, contents=user_msg, config=cfg)
 
     return resp.text or ""
