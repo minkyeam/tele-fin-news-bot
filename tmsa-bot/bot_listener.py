@@ -151,9 +151,15 @@ async def _command_loop(client: httpx.AsyncClient) -> None:
 
 
 async def _auto_run_loop(client: httpx.AsyncClient) -> None:
-    """AUTO_RUN_HOURS 간격으로 파이프라인을 자동 실행합니다."""
+    """AUTO_RUN_HOURS 간격으로 파이프라인을 자동 실행합니다. 시작 직후 1회 즉시 실행합니다."""
     interval_sec = config.AUTO_RUN_HOURS * 3600
-    print(f"[Listener] 자동 실행: {config.AUTO_RUN_HOURS}시간마다")
+    print(f"[Listener] 자동 실행: {config.AUTO_RUN_HOURS}시간마다 (시작 직후 1회 즉시 실행)")
+    # 배포 직후 즉시 1회 실행
+    await asyncio.sleep(5)  # 리스너 초기화 대기
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    print(f"[Listener] 초기 자동 실행 트리거 ({now})")
+    await _handle_run(client)
+    # 이후 주기적으로 반복
     while True:
         await asyncio.sleep(interval_sec)
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -188,7 +194,19 @@ async def start_listener() -> None:
         print("           .env 파일에 두 값을 추가하세요.")
         return
 
+    auto_info = f"자동 실행: {config.AUTO_RUN_HOURS}시간마다" if config.AUTO_RUN_HOURS > 0 else "자동 실행: 비활성화"
+    _startup_msg = (
+        "🤖 TMSA 봇이 시작되었습니다.\n"
+        f"{auto_info}\n\n"
+        "사용 가능한 명령어:\n"
+        "/run — 파이프라인 실행 + 시그널 전송\n"
+        "/send — 저장된 시그널 재전송\n"
+        "/status — 현재 상태 확인\n"
+        "/help — 명령어 목록"
+    )
+
     async with httpx.AsyncClient() as client:
+        await _notify(_startup_msg, client)
         tasks = [
             asyncio.create_task(_health_server()),
             asyncio.create_task(_command_loop(client)),
