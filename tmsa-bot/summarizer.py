@@ -46,25 +46,30 @@ _SYSTEM_PROMPT = """당신은 금융·블록체인·DeFi 시장 전문 애널리
 - 텔레그램 메시지 원문(=커뮤니티 반응)과 기사 내용을 함께 고려"""
 
 
+_MAX_ARTICLES = 7   # LLM 입력에 포함할 기사 최대 개수
+_MAX_POSTS    = 5   # LLM 입력에 포함할 텔레그램 포스트 최대 개수
+
+
 def _build_user_message(cluster: Cluster) -> str:
-    # 기사 목록
+    # 기사 목록 (상위 _MAX_ARTICLES개만 — 너무 많으면 입력 토큰 초과)
     articles = []
     for i, (title, desc) in enumerate(
-        zip(cluster.titles, cluster.descriptions), start=1
+        zip(cluster.titles[:_MAX_ARTICLES], cluster.descriptions[:_MAX_ARTICLES]), start=1
     ):
         if title or desc:
             articles.append(f"{i}. 제목: {title}\n   설명: {desc}")
+    total_articles = len(cluster.url_hashes)
     article_block = "\n\n".join(articles) if articles else "(기사 없음)"
 
-    # 텔레그램 포스트 본문 (상위 5개, 각 200자 절단)
+    # 텔레그램 포스트 본문 (상위 _MAX_POSTS개, 각 200자 절단)
     post_block = ""
     if cluster.post_texts:
-        posts = [f"- {t[:200].strip()}" for t in cluster.post_texts[:5]]
+        posts = [f"- {t[:200].strip()}" for t in cluster.post_texts[:_MAX_POSTS]]
         post_block = "\n=== 텔레그램 메시지 원문 ===\n" + "\n".join(posts)
 
     return (
         f"Authority Score 합계: {cluster.total_authority_score:.2f}\n"
-        f"관련 기사: {len(cluster.url_hashes)}개\n"
+        f"관련 기사: {total_articles}개 (상위 {len(articles)}개 표시)\n"
         f"\n=== 기사 목록 ===\n{article_block}"
         f"{post_block}"
     )
@@ -139,13 +144,13 @@ def _call_model(model: str, user_msg: str,
 
     if is_gemma:
         combined = f"{system_prompt}\n\n---\n\n{user_msg}"
-        cfg = types.GenerateContentConfig(temperature=0.3, max_output_tokens=400)
+        cfg = types.GenerateContentConfig(temperature=0.3, max_output_tokens=700)
         resp = _client.models.generate_content(model=model, contents=combined, config=cfg)
     else:
         cfg = types.GenerateContentConfig(
             system_instruction=system_prompt,
             temperature=0.3,
-            max_output_tokens=400,
+            max_output_tokens=700,
         )
         resp = _client.models.generate_content(model=model, contents=user_msg, config=cfg)
 
