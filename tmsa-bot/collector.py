@@ -116,8 +116,14 @@ async def collect(
     db.init_db()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=config.COLLECT_HOURS)
 
-    # 클라우드 배포: TG_SESSION_STRING 사용 / 로컬: 파일 세션 사용
-    _session = StringSession(config.TG_SESSION_STRING) if config.TG_SESSION_STRING else "tmsa_session"
+    # 클라우드 배포: TG_SESSION_STRING 필수 / 로컬: 파일 세션 사용
+    if not config.TG_SESSION_STRING:
+        raise RuntimeError(
+            "TG_SESSION_STRING 환경변수가 설정되지 않았습니다.\n"
+            "로컬에서 generate_session.py를 실행하여 세션 문자열을 생성한 뒤 "
+            "Render 환경변수에 TG_SESSION_STRING으로 추가하세요."
+        )
+    _session = StringSession(config.TG_SESSION_STRING)
     async with TelegramClient(
         _session,
         config.TELEGRAM_API_ID,
