@@ -71,7 +71,9 @@ def _make_source_link(url: str, index: int) -> str:
         label = domain or f"출처{index}"
     except Exception:
         label = f"출처{index}"
-    return f'<a href="{url}">{_escape_html(label)}</a>'
+    # href 안의 & → &amp; (Telegram HTML 파서 필수 요구사항)
+    safe_url = url.replace("&", "&amp;")
+    return f'<a href="{safe_url}">{_escape_html(label)}</a>'
 
 
 # ── 메시지 포맷터 ─────────────────────────────────────────────────────────────
@@ -98,28 +100,26 @@ def _format_signal(sig: dict, links: list[dict], emoji: str) -> str:
             if stock_line.strip():
                 lines.append(_escape_html(stock_line.strip()))
 
-    # 소스 링크: URL 클러스터 → 출처 링크 / 텍스트 클러스터 → t.me 채널 링크
+    # 출처 링크 (URL 클러스터)
+    source_links = []
+    for i, lnk in enumerate(links[:3], start=1):
+        url = lnk.get("original_url", "")
+        if url:
+            source_links.append(_make_source_link(url, i))
+    if source_links:
+        lines.append("")
+        lines.append("출처: " + " | ".join(source_links))
+
+    # 채널 링크 (t.me) — URL 클러스터/텍스트 클러스터 모두 표시
     tme_raw = sig.get("tme_links", "")
-    if tme_raw and not links:
-        # 바이럴 텍스트 시그널: t.me 메시지 링크
+    if tme_raw:
         tme_entries = [l.strip() for l in tme_raw.splitlines() if l.strip()]
         tme_tags = [
             f'<a href="{url}">채널 {i}</a>'
             for i, url in enumerate(tme_entries[:5], start=1)
         ]
         if tme_tags:
-            lines.append("")
             lines.append("📣 채널: " + " | ".join(tme_tags))
-    else:
-        # URL 클러스터: 출처 링크
-        source_links = []
-        for i, lnk in enumerate(links[:3], start=1):
-            url = lnk.get("original_url", "")
-            if url:
-                source_links.append(_make_source_link(url, i))
-        if source_links:
-            lines.append("")
-            lines.append("출처: " + " | ".join(source_links))
 
     return "\n".join(lines)
 

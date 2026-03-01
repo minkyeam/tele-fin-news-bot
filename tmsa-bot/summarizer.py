@@ -72,25 +72,38 @@ def _build_user_message(cluster: Cluster) -> str:
 
 def _parse_response(text: str) -> tuple[str, str, str]:
     """LLM 응답에서 (제목, 요약, 종목문자열) 튜플을 파싱합니다."""
-    title       = ""
-    summary     = ""
-    tickers_raw = ""
+    title           = ""
+    tickers_raw     = ""
+    summary_lines: list[str] = []
+    current_field: str | None = None
 
-    for line in text.strip().splitlines():
-        line = line.strip()
+    for raw_line in text.strip().splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
         if line.startswith("제목:"):
+            current_field = "title"
             title = line[3:].strip()
         elif line.startswith("요약:"):
-            summary = line[3:].strip()
+            current_field = "summary"
+            first = line[3:].strip()
+            if first:
+                summary_lines.append(first)
         elif line.startswith("종목:"):
+            current_field = "tickers"
             tickers_raw = line[3:].strip()
+        elif current_field == "summary":
+            # 요약 필드 이후 줄도 계속 요약으로 수집 (멀티라인 지원)
+            summary_lines.append(line)
 
-    # 요약이 여러 줄에 걸쳐 있을 경우 처리
+    summary = "\n".join(summary_lines)
+
+    # 파싱 실패 시 fallback: 레이블 행 제외한 나머지 텍스트
     if not summary:
-        lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+        labels = ("제목:", "요약:", "종목:")
         body = [
-            l for l in lines
-            if not l.startswith("제목:") and not l.startswith("요약:") and not l.startswith("종목:")
+            l.strip() for l in text.strip().splitlines()
+            if l.strip() and not any(l.strip().startswith(p) for p in labels)
         ]
         summary = "\n".join(body)[:500]
 
