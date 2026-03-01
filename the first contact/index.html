@@ -5,16 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Little Hacker's Quest - Voice Edition</title>
   <style>
+    @font-face {
+      font-family: "RetroDOS";
+      src:
+        local("Perfect DOS VGA 437 Win"),
+        local("Px437 IBM VGA8"),
+        local("Fixedsys Excelsior 3.01");
+    }
+
     :root {
-      --bg: #0d1b1e;
-      --bg-alt: #13272b;
-      --panel: #1b343a;
-      --accent: #7df9aa;
-      --accent-2: #ffd166;
-      --text: #f6fff9;
-      --muted: #b4d2c1;
-      --danger: #ff7a7a;
-      --success: #78f0a6;
+      --bg: #050505;
+      --bg-alt: #0f1110;
+      --panel: #0a0d0a;
+      --accent: #00ff7f;
+      --accent-2: #ffd43b;
+      --text: #d2ffd2;
+      --muted: #84b484;
+      --danger: #ff6b6b;
+      --success: #6dff9b;
+      --line: #224422;
     }
 
     * {
@@ -23,12 +32,19 @@
 
     body {
       margin: 0;
-      font-family: "Courier New", Courier, monospace;
+      font-family: "RetroDOS", "Lucida Console", "Courier New", monospace;
       color: var(--text);
       background:
-        radial-gradient(circle at 20% 15%, #1d3a40 0%, transparent 45%),
-        radial-gradient(circle at 85% 85%, #193f30 0%, transparent 45%),
-        linear-gradient(150deg, var(--bg) 0%, #0f252a 100%);
+        repeating-linear-gradient(
+          0deg,
+          rgba(0, 255, 127, 0.03) 0,
+          rgba(0, 255, 127, 0.03) 1px,
+          transparent 1px,
+          transparent 3px
+        ),
+        radial-gradient(circle at 12% 10%, #183018 0%, transparent 28%),
+        radial-gradient(circle at 88% 90%, #2f1e0d 0%, transparent 26%),
+        linear-gradient(180deg, var(--bg-alt) 0%, var(--bg) 100%);
       min-height: 100vh;
       display: flex;
       align-items: center;
@@ -38,10 +54,10 @@
 
     .app {
       width: min(920px, 100%);
-      border: 3px solid var(--accent);
-      border-radius: 16px;
-      background: rgba(16, 34, 38, 0.9);
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+      border: 2px solid var(--accent);
+      border-radius: 0;
+      background: rgba(5, 8, 5, 0.95);
+      box-shadow: 0 0 0 2px #011a01 inset, 0 18px 42px rgba(0, 0, 0, 0.55);
       overflow: hidden;
     }
 
@@ -49,9 +65,9 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 12px 16px;
-      background: #102328;
-      border-bottom: 2px solid #1f4a45;
+      padding: 10px 14px;
+      background: #070c07;
+      border-bottom: 1px solid var(--line);
       gap: 10px;
       flex-wrap: wrap;
     }
@@ -59,8 +75,9 @@
     .title {
       margin: 0;
       color: var(--accent);
-      font-size: clamp(18px, 3vw, 28px);
-      letter-spacing: 0.02em;
+      font-size: clamp(14px, 2.6vw, 20px);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
     }
 
     .controls {
@@ -68,61 +85,72 @@
       gap: 14px;
       align-items: center;
       color: var(--muted);
-      font-size: 14px;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      padding: 6px 8px;
+      background: #061006;
     }
 
     .main {
-      padding: 18px;
+      padding: 14px;
       display: grid;
       gap: 14px;
     }
 
     .start-screen {
       display: grid;
-      gap: 16px;
-      justify-items: center;
-      text-align: center;
-      padding: 28px 18px;
+      gap: 12px;
+      justify-items: start;
+      text-align: left;
+      padding: 8px 4px;
+    }
+
+    .boot {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+      border: 1px solid var(--line);
+      background: #071007;
+      padding: 10px;
     }
 
     .start-btn {
-      border: 0;
-      border-radius: 16px;
-      padding: 16px 28px;
+      border: 1px solid var(--accent);
+      border-radius: 0;
+      padding: 10px 14px;
       font-family: inherit;
-      font-size: clamp(24px, 4vw, 34px);
-      font-weight: 700;
-      color: #082019;
-      background: var(--accent);
+      font-size: clamp(16px, 2.8vw, 20px);
+      color: var(--accent);
+      background: #052205;
       cursor: pointer;
-      box-shadow: 0 8px 0 #3dbf7e;
-      transform: translateY(0);
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      box-shadow: none;
+      text-transform: uppercase;
     }
 
-    .start-btn:active {
-      transform: translateY(5px);
-      box-shadow: 0 3px 0 #3dbf7e;
+    .start-btn:hover {
+      background: #0b330b;
     }
 
     .level {
-      border: 2px dashed #315f63;
-      border-radius: 12px;
-      padding: 14px;
-      background: rgba(17, 36, 40, 0.8);
+      border: 1px solid var(--line);
+      border-radius: 0;
+      padding: 12px;
+      background: rgba(8, 16, 8, 0.85);
       min-height: 240px;
       animation: fadeIn 0.4s ease;
     }
 
     .level-title {
       margin: 0 0 10px;
-      color: var(--accent-2);
-      font-size: 18px;
+      color: var(--accent);
+      font-size: 16px;
+      letter-spacing: 0.04em;
     }
 
     pre {
       margin: 0;
-      font-size: clamp(15px, 2.3vw, 20px);
+      font-size: clamp(14px, 2.1vw, 18px);
       line-height: 1.35;
       color: #e8fdf2;
       white-space: pre-wrap;
@@ -132,63 +160,85 @@
     .desc {
       margin-top: 10px;
       color: var(--muted);
-      font-size: 15px;
+      font-size: 14px;
     }
 
     .hint {
-      border-left: 4px solid var(--accent-2);
-      background: rgba(255, 209, 102, 0.1);
-      border-radius: 10px;
-      padding: 10px 12px;
-      font-size: 16px;
-      color: #fff4d6;
+      border: 1px solid #574400;
+      background: rgba(80, 64, 8, 0.16);
+      border-radius: 0;
+      padding: 10px;
+      font-size: 14px;
+      color: #ffeeb0;
     }
 
     .command {
-      color: var(--accent);
-      font-size: clamp(26px, 6vw, 42px);
-      margin: 2px 0;
+      color: var(--accent-2);
+      font-size: clamp(24px, 5vw, 34px);
+      margin: 4px 0;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.08em;
     }
 
     .input-area {
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .prompt-input {
+      flex: 1 1 260px;
+      min-width: 0;
+      border: 1px solid var(--line);
+      background: #061106;
+      display: flex;
+      align-items: center;
+      padding: 8px 10px;
+      gap: 8px;
+    }
+
+    .prompt-mark {
+      color: var(--accent);
+      font-size: 18px;
     }
 
     input[type="text"] {
-      flex: 1 1 260px;
+      flex: 1;
       min-width: 0;
-      border: 2px solid #35656a;
-      border-radius: 10px;
-      background: #0f2125;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
       color: var(--text);
-      padding: 12px;
+      padding: 0;
       font-family: inherit;
-      font-size: 20px;
+      font-size: 18px;
+      outline: none;
     }
 
     button {
-      border: 0;
-      border-radius: 10px;
-      padding: 10px 16px;
+      border: 1px solid var(--line);
+      border-radius: 0;
+      padding: 9px 12px;
       font-family: inherit;
-      font-size: 16px;
+      font-size: 14px;
       cursor: pointer;
-      background: #244a52;
+      background: #071207;
       color: var(--text);
+      text-transform: uppercase;
     }
 
     button:hover {
-      background: #2d5a63;
+      background: #0f1d0f;
+      color: var(--accent);
     }
 
     .status {
       min-height: 24px;
-      font-size: 16px;
+      font-size: 14px;
       color: var(--muted);
+      border-top: 1px dashed var(--line);
+      padding-top: 8px;
     }
 
     .status.ok {
@@ -205,12 +255,12 @@
 
     .done {
       text-align: center;
-      font-size: clamp(20px, 3.2vw, 28px);
+      font-size: clamp(18px, 2.8vw, 24px);
       color: var(--success);
-      padding: 22px;
-      border: 2px solid #3f8b68;
-      border-radius: 12px;
-      background: rgba(44, 92, 74, 0.2);
+      padding: 16px 12px;
+      border: 1px solid #2b6b43;
+      border-radius: 0;
+      background: rgba(15, 40, 20, 0.35);
     }
 
     @keyframes fadeIn {
@@ -228,19 +278,22 @@
 <body>
   <main class="app" aria-live="polite">
     <header class="header">
-      <h1 class="title">Little Hacker's Quest - Voice Edition</h1>
+      <h1 class="title">$ LHQ Voice Terminal v1.0</h1>
       <div class="controls">
         <label>
           <input id="letterSoundToggle" type="checkbox" checked />
-          키 입력 알파벳 읽기
+          KEY SOUND ON
         </label>
       </div>
     </header>
 
     <section class="main">
       <section id="startScreen" class="start-screen">
-        <p>소리를 켜고 시작하면, 미션을 목소리로 안내해줘요.</p>
-        <button id="startBtn" class="start-btn" type="button">시작!</button>
+        <pre class="boot">BOOT: LITTLE HACKER'S QUEST (VOICE)
+STATUS: READY
+AUDIO: KO-KR TTS CONNECTED
+COMMAND: PRESS START TO BEGIN</pre>
+        <button id="startBtn" class="start-btn" type="button">[ START MISSION ]</button>
       </section>
 
       <section id="gameScreen" class="hidden">
@@ -251,15 +304,18 @@
         </article>
 
         <section class="hint">
-          <strong>입력할 명령어</strong>
+          <strong>&gt; NEXT COMMAND</strong>
           <p class="command" id="commandText"></p>
           <p id="spellingText"></p>
         </section>
 
         <section class="input-area">
-          <input id="commandInput" type="text" autocomplete="off" spellcheck="false" aria-label="명령어 입력" />
-          <button id="submitBtn" type="button">입력</button>
-          <button id="repeatBtn" type="button">힌트 다시 듣기</button>
+          <label class="prompt-input" for="commandInput">
+            <span class="prompt-mark">$</span>
+            <input id="commandInput" type="text" autocomplete="off" spellcheck="false" aria-label="명령어 입력" />
+          </label>
+          <button id="submitBtn" type="button">[ ENTER ] RUN</button>
+          <button id="repeatBtn" type="button">[ F1 ] REPEAT VOICE</button>
         </section>
 
         <p id="status" class="status"></p>
@@ -438,7 +494,7 @@
       ui.spellingText.textContent = `철자 힌트: ${level.spelling} (${commandToSpellingKo(level.command)})`;
       ui.commandInput.value = '';
       ui.commandInput.focus();
-      setStatus('목소리를 듣고 알파벳을 찾아 입력해보세요.');
+      setStatus('SYS> VOICE GUIDE READY. TYPE THE COMMAND.');
       speak(buildIntroTTS(level), { rate: 0.88 });
     }
 
@@ -446,15 +502,15 @@
       const level = levels[currentLevel];
       ui.sceneArt.textContent = level.artAfter;
       ui.sceneDesc.textContent = level.descAfter;
-      setStatus('성공! 다음 레벨로 이동할게요.', 'ok');
+      setStatus('OK> MISSION CLEARED. LOADING NEXT LEVEL...', 'ok');
       speak(level.rewardTTS, { rate: 0.9 });
 
       setTimeout(() => {
         currentLevel += 1;
         if (currentLevel >= levels.length) {
-          ui.doneBox.textContent = '모든 미션 완료! 너는 오늘의 꼬마 해커야!';
+          ui.doneBox.textContent = 'ALL MISSIONS COMPLETE :: LITTLE HACKER CERTIFIED';
           ui.doneBox.classList.remove('hidden');
-          setStatus('끝! 다시 하려면 페이지를 새로고침하세요.', 'ok');
+          setStatus('OK> SESSION CLOSED. REFRESH TO PLAY AGAIN.', 'ok');
           speak('모든 미션을 성공했어요! 오늘의 꼬마 해커로 임명!', { rate: 0.9 });
           ui.submitBtn.disabled = true;
           ui.repeatBtn.disabled = true;
@@ -473,7 +529,7 @@
       if (answer === level.command) {
         completeLevel();
       } else {
-        setStatus('조금 달라요. 힌트를 다시 들어볼까요?', 'err');
+        setStatus('ERR> INVALID COMMAND. TRY AGAIN OR PRESS REPEAT.', 'err');
         speak(`괜찮아, 다시 해보자. 정답은 ${level.command.toUpperCase()}. ${commandToSpellingKo(level.command)}.`, { rate: 0.88 });
       }
     }
@@ -516,7 +572,7 @@
       speechSynthesis.onvoiceschanged = pickKoreanVoice;
       pickKoreanVoice();
     } else {
-      setStatus('이 브라우저는 음성 안내를 지원하지 않아요.');
+      setStatus('ERR> THIS BROWSER DOES NOT SUPPORT TTS.', 'err');
     }
   </script>
 </body>
