@@ -49,7 +49,8 @@ def main() -> None:
 
     if "--signal-only" in args:
         scorer.run_scoring()
-        clusters = clusterer.run_clustering()
+        scorer.run_post_scoring()
+        clusters = clusterer.run_unified_clustering(top_n=config.TOP_SIGNALS)
         summarizer.run_summarization(clusters)
         summarizer.print_signals()
         print("\n봇 전송: python main.py --send")

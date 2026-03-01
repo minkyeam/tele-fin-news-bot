@@ -116,3 +116,48 @@ def run_scoring() -> list[LinkScoreResult]:
             print(f"  ▶ {r.score:.4f}  {r.original_url[:80]}")
 
     return results
+
+
+def run_post_scoring() -> None:
+    """
+    포스트 단위 Authority Score를 계산하고 posts 테이블을 업데이트합니다.
+
+    공식:
+        Post_Auth(P) = w1·log(Sc) + w2·Vp/Sc   ← 메시지 기본 점수
+                     + POST_URL_WEIGHT · max_url_auth(P)  ← URL 어소리티 보조
+
+    - Sc           : 채널 구독자 수
+    - Vp           : 포스트 조회수
+    - max_url_auth : 포스트에 포함된 URL 중 최고 Authority Score
+                     (URL 없으면 0 — URL은 보조값이므로 없어도 무방)
+    """
+    sql = """
+        SELECT
+            p.post_id,
+            p.views,
+            c.subscriber_count,
+            COALESCE(MAX(l.authority_score), 0) AS max_url_auth
+        FROM posts p
+        JOIN channels c ON p.channel_id = c.channel_id
+        LEFT JOIN post_links pl ON p.post_id  = pl.post_id
+        LEFT JOIN links      l  ON pl.url_hash = l.url_hash
+        GROUP BY p.post_id
+    """
+    with db.get_conn() as conn:
+        rows = conn.execute(sql).fetchall()
+
+    if not rows:
+        print("[Scorer] 포스트 스코어링할 데이터가 없습니다.")
+        return
+
+    for row in rows:
+        Sc       = max(row["subscriber_count"] or 1, 1)
+        Vp       = row["views"] or 0
+        url_auth = row["max_url_auth"] or 0.0
+
+        base  = config.AUTHORITY_W1 * math.log(Sc) + config.AUTHORITY_W2 * Vp / Sc
+        score = base + config.POST_URL_WEIGHT * url_auth
+
+        db.update_post_score(row["post_id"], round(score, 6))
+
+    print(f"[Scorer] 포스트 Authority Score 업데이트: {len(rows)}개")

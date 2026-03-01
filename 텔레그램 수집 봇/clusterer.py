@@ -97,107 +97,36 @@ def _embed_texts(texts: list[str]) -> np.ndarray:
     raise RuntimeError("모든 임베딩 모델 실패 — 클러스터링 불가")
 
 
-def run_clustering(top_n: int | None = None) -> list[Cluster]:
+def run_unified_clustering(top_n: int = 15) -> list[Cluster]:
     """
-    1. 상위 N% 링크 로드
-    2. title + description 임베딩
-    3. DBSCAN 클러스터링
-    4. DB 업데이트 (link.cluster_id)
-    5. authority 상위 top_n개 Cluster 반환 (기본값: config.TOP_SIGNALS)
+    모든 포스트를 대상으로 통합 임베딩 + DBSCAN 클러스터링.
+
+    - 포스트 본문을 임베딩 텍스트로 사용 (URL 있든 없든 동일하게 처리)
+    - 클러스터 점수 = Σ(포스트 Authority Score)  ← 메시지가 주인공
+    - URL Authority Score는 포스트 점수에 이미 반영된 보조값
+    - 노이즈(-1) 포스트는 제외 (단독 포스트는 트렌드 아님)
+    - top_n개 반환 (기본 15)
     """
-    if top_n is None:
-        top_n = config.TOP_SIGNALS
+    db.clear_signals()
 
-    db.clear_signals()  # 이전 클러스터링/시그널 초기화
-    links = db.get_top_links_by_score(config.CLUSTER_TOP_PERCENT)
-
-    if not links:
-        print("[Clusterer] 클러스터링할 링크가 없습니다.")
+    rows = db.get_posts_for_clustering(
+        min_length=30, collect_hours=config.COLLECT_HOURS
+    )
+    if not rows:
+        print("[Clusterer] 클러스터링할 포스트가 없습니다.")
         return []
 
-    print(f"[Clusterer] 대상 링크: {len(links)}개")
+    print(f"[Clusterer] 대상 포스트: {len(rows)}개")
 
-    # ── 텍스트 준비 ──────────────────────────────────────────────────────────
-    texts = [
-        f"{row['title']} {row['description']}".strip() or row["original_url"]
-        for row in links
-    ]
+    # ── 임베딩 텍스트 준비 (포스트 본문 500자 절단) ──────────────────────────
+    texts = [row["content"][:500] for row in rows]
 
     # ── 임베딩 ───────────────────────────────────────────────────────────────
     print(f"[Clusterer] 임베딩 중... (model={config.EMBEDDING_MODEL})")
     vecs = _embed_texts(texts)
-    vecs = normalize(vecs)  # 코사인 거리를 위해 L2 정규화
-
-    # ── DBSCAN ───────────────────────────────────────────────────────────────
-    db_scan = DBSCAN(
-        eps=config.DBSCAN_EPS,
-        min_samples=config.DBSCAN_MIN_SAMPLES,
-        metric="cosine",
-        algorithm="brute",
-        n_jobs=-1
-    )
-    labels = db_scan.fit_predict(vecs)
-    n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-    n_noise    = list(labels).count(-1)
-    print(f"[Clusterer] 1차 클러스터: {n_clusters}개, 노이즈: {n_noise}개")
-
-    # ── 클러스터 집계 ─────────────────────────────────────────────────────────
-    cluster_map: dict[int, Cluster] = {}
-
-    for idx, (link, label) in enumerate(zip(links, labels)):
-        # 노이즈(-1)는 각각 독립 클러스터로 처리
-        effective_label = label if label != -1 else -(idx + 1000)
-
-        if effective_label not in cluster_map:
-            cluster_map[effective_label] = Cluster(
-                cluster_id=str(uuid.uuid4())
-            )
-
-        cluster = cluster_map[effective_label]
-        cluster.url_hashes.append(link["url_hash"])
-        cluster.titles.append(link["title"] or "")
-        cluster.descriptions.append(link["description"] or "")
-        cluster.total_authority_score += link["authority_score"] or 0.0
-
-        db.assign_link_to_cluster(link["url_hash"], cluster.cluster_id)
-
-    # ── authority 상위 top_n개 선택 ───────────────────────────────────────────
-    clusters = sorted(
-        cluster_map.values(),
-        key=lambda c: c.total_authority_score,
-        reverse=True
-    )[:top_n]
-
-    # ── 포스트 본문 로드 (LLM 요약에 사용) ───────────────────────────────────
-    for cluster in clusters:
-        cluster.post_texts = db.get_post_texts_for_links(cluster.url_hashes)
-
-    print(f"[Clusterer] 완료 — 상위 {len(clusters)}개 클러스터 반환 (전체 {len(cluster_map)}개 중)")
-    return clusters
-
-
-def run_text_clustering(top_n: int = 5) -> list[Cluster]:
-    """
-    URL이 없는 포스트들을 임베딩 + DBSCAN으로 클러스터링합니다.
-    여러 채널에서 동시에 등장하는 바이럴 텍스트 시그널을 탐지합니다.
-
-    조건:
-      - URL 링크가 없는 포스트
-      - 최소 50자 이상의 내용
-      - 2개 이상의 서로 다른 채널에서 등장
-    """
-    rows = db.get_posts_without_links(min_length=50, collect_hours=config.COLLECT_HOURS)
-    if not rows:
-        print("[Clusterer-Text] 텍스트 전용 포스트 없음")
-        return []
-
-    print(f"[Clusterer-Text] 텍스트 전용 포스트: {len(rows)}개")
-
-    texts = [row["content"][:500] for row in rows]  # 500자 절단으로 임베딩 품질 유지
-
-    vecs = _embed_texts(texts)
     vecs = normalize(vecs)
 
+    # ── DBSCAN ───────────────────────────────────────────────────────────────
     db_scan = DBSCAN(
         eps=config.DBSCAN_EPS,
         min_samples=config.DBSCAN_MIN_SAMPLES,
@@ -207,13 +136,15 @@ def run_text_clustering(top_n: int = 5) -> list[Cluster]:
     )
     labels = db_scan.fit_predict(vecs)
     n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-    print(f"[Clusterer-Text] 1차 클러스터: {n_clusters}개 (노이즈 제외)")
+    n_noise    = list(labels).count(-1)
+    print(f"[Clusterer] 클러스터: {n_clusters}개, 노이즈(제외): {n_noise}개")
 
+    # ── 클러스터 집계 ─────────────────────────────────────────────────────────
     cluster_map: dict[int, Cluster] = {}
 
-    for idx, (row, label) in enumerate(zip(rows, labels)):
+    for row, label in zip(rows, labels):
         if label == -1:
-            continue  # 단독 포스트는 바이럴 아님 — 제외
+            continue  # 노이즈 제외
 
         if label not in cluster_map:
             cluster_map[label] = Cluster(cluster_id=str(uuid.uuid4()))
@@ -222,14 +153,29 @@ def run_text_clustering(top_n: int = 5) -> list[Cluster]:
         cluster.post_texts.append(row["content"])
         cluster.post_ids.append(row["post_id"])
         cluster.channel_ids.append(row["channel_id"])
-        cluster.total_authority_score += row["views"] or 0.0
+        cluster.total_authority_score += row["authority_score"] or 0.0
 
-    # 바이럴 조건: 2개 이상의 서로 다른 채널에서 등장
-    viral = [
-        c for c in cluster_map.values()
-        if len(set(c.channel_ids)) >= 2
-    ]
+        # 이 포스트에 연결된 URL 해시 수집 (중복 제거)
+        if row["url_hashes_raw"]:
+            for h in row["url_hashes_raw"].split("|"):
+                if h and h not in cluster.url_hashes:
+                    cluster.url_hashes.append(h)
 
-    result = sorted(viral, key=lambda c: c.total_authority_score, reverse=True)[:top_n]
-    print(f"[Clusterer-Text] 바이럴 클러스터 {len(result)}개 반환 (전체 {len(cluster_map)}개 중)")
-    return result
+    # ── authority 상위 top_n 선택 ─────────────────────────────────────────────
+    clusters = sorted(
+        cluster_map.values(),
+        key=lambda c: c.total_authority_score,
+        reverse=True,
+    )[:top_n]
+
+    # ── URL 메타데이터 + cluster_id 할당 ─────────────────────────────────────
+    for cluster in clusters:
+        if cluster.url_hashes:
+            meta = db.get_links_metadata(cluster.url_hashes)
+            cluster.titles       = [meta[h]["title"] or ""       for h in cluster.url_hashes if h in meta]
+            cluster.descriptions = [meta[h]["description"] or "" for h in cluster.url_hashes if h in meta]
+            for h in cluster.url_hashes:
+                db.assign_link_to_cluster(h, cluster.cluster_id)
+
+    print(f"[Clusterer] 완료 — 상위 {len(clusters)}개 반환 (전체 {len(cluster_map)}개 클러스터 중)")
+    return clusters

@@ -17,8 +17,10 @@ TELEGRAM_PHONE    = os.environ["TELEGRAM_PHONE"]
 GEMINI_API_KEY    = os.environ["GEMINI_API_KEY"]
 
 # ── Authority Score 가중치 ────────────────────────────────────────────────────
-AUTHORITY_W1 = float(os.getenv("AUTHORITY_W1", "0.7"))
-AUTHORITY_W2 = float(os.getenv("AUTHORITY_W2", "0.3"))
+AUTHORITY_W1      = float(os.getenv("AUTHORITY_W1", "0.7"))
+AUTHORITY_W2      = float(os.getenv("AUTHORITY_W2", "0.3"))
+# 포스트 Authority 계산 시 URL 어소리티의 보조 가중치 (0이면 URL 점수 무시)
+POST_URL_WEIGHT   = float(os.getenv("POST_URL_WEIGHT", "0.3"))
 
 # ── 수집 설정 ─────────────────────────────────────────────────────────────────
 COLLECT_HOURS       = int(os.getenv("COLLECT_HOURS", "24"))

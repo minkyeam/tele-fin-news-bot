@@ -4,12 +4,12 @@ pipeline.py
 전체 TMSA 파이프라인을 순서대로 실행하는 오케스트레이터.
 
 실행 순서
- Step 1.  collect      — Telegram 채널 메시지 수집 + URL 추출 + 메타데이터 크롤링
- Step 2.  score        — Authority Score 계산 및 Link 테이블 업데이트
- Step 3a. cluster      — 상위 URL 링크 임베딩 + DBSCAN 클러스터링
- Step 3b. text-cluster — URL 없는 바이럴 메시지 임베딩 + DBSCAN 클러스터링
- Step 4.  summarize    — LLM 요약 + Signal 테이블 저장
- Step 5.  display      — 터미널 출력
+ Step 1. collect       — Telegram 채널 메시지 수집 + URL 추출 + 메타데이터 크롤링
+ Step 2a. score_links  — URL Authority Score 계산
+ Step 2b. score_posts  — 포스트 Authority Score 계산 (URL 어소리티를 보조값으로 활용)
+ Step 3. cluster       — 모든 포스트 통합 임베딩 + DBSCAN → 상위 15개
+ Step 4. summarize     — LLM 요약 + Signal 테이블 저장
+ Step 5. display       — 터미널 출력
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ import collector
 import scorer
 import clusterer
 import summarizer
-import bot_sender
 import config
 
 
@@ -35,22 +34,21 @@ async def run_pipeline(
     print("\n── Step 1/4: Telegram 수집 ──────────────────────────────────────")
     await collector.collect(channels, use_subscribed=use_subscribed)
 
-    # ── Step 2: 스코어링 ──────────────────────────────────────────────────────
-    print("\n── Step 2/4: Authority Score 계산 ───────────────────────────────")
+    # ── Step 2a: URL 스코어링 ─────────────────────────────────────────────────
+    print("\n── Step 2a: URL Authority Score 계산 ────────────────────────────")
     scorer.run_scoring()
 
-    # ── Step 3a: URL 클러스터링 ───────────────────────────────────────────────
-    print("\n── Step 3a: URL 임베딩 + DBSCAN 클러스터링 ─────────────────────")
-    clusters = clusterer.run_clustering()
+    # ── Step 2b: 포스트 스코어링 ──────────────────────────────────────────────
+    print("\n── Step 2b: 포스트 Authority Score 계산 (URL 보조 반영) ─────────")
+    scorer.run_post_scoring()
 
-    # ── Step 3b: 텍스트 전용 바이럴 클러스터링 ───────────────────────────────
-    print("\n── Step 3b: 바이럴 텍스트 클러스터링 ───────────────────────────")
-    text_clusters = clusterer.run_text_clustering(top_n=5)
+    # ── Step 3: 통합 클러스터링 ───────────────────────────────────────────────
+    print("\n── Step 3/4: 통합 포스트 임베딩 + DBSCAN 클러스터링 ────────────")
+    clusters = clusterer.run_unified_clustering(top_n=config.TOP_SIGNALS)
 
     # ── Step 4: 요약 ─────────────────────────────────────────────────────────
     print("\n── Step 4/4: LLM 요약 + Signal 저장 ────────────────────────────")
     summarizer.run_summarization(clusters)
-    summarizer.run_text_summarization(text_clusters)
 
     # ── 결과 출력 ─────────────────────────────────────────────────────────────
     summarizer.print_signals()

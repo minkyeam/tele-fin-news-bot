@@ -133,10 +133,6 @@ def build_messages(signals: list[dict]) -> list[str]:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     total = len(signals)
 
-    # URL 클러스터 vs 바이럴 텍스트 분리
-    url_signals  = [e for e in signals if e["links"] or not e["signal"].get("tme_links")]
-    text_signals = [e for e in signals if not e["links"] and e["signal"].get("tme_links")]
-
     header = f"━━━ 📊 TMSA 마켓 시그널 리포트 ⏰ {now} ━━━"
     footer = (
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -145,15 +141,9 @@ def build_messages(signals: list[dict]) -> list[str]:
 
     blocks: list[str] = [header]
 
-    url_total = len(url_signals)
-    for rank, entry in enumerate(url_signals, start=1):
-        emoji = _authority_emoji(rank, url_total)
+    for rank, entry in enumerate(signals, start=1):
+        emoji = _authority_emoji(rank, total)
         blocks.append(_format_signal(entry["signal"], entry["links"], emoji))
-
-    if text_signals:
-        blocks.append("━━━ 📣 바이럴 메시지 시그널 ━━━")
-        for entry in text_signals:
-            blocks.append(_format_signal(entry["signal"], entry["links"], "📣"))
 
     blocks.append(footer)
 

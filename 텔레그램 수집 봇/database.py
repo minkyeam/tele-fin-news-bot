@@ -34,11 +34,12 @@ CREATE TABLE IF NOT EXISTS channels (
 );
 
 CREATE TABLE IF NOT EXISTS posts (
-    post_id    TEXT PRIMARY KEY,            -- "{channel_id}_{msg_id}"
-    channel_id TEXT NOT NULL REFERENCES channels(channel_id),
-    content    TEXT,
-    views      INTEGER DEFAULT 0,
-    timestamp  TEXT NOT NULL               -- ISO-8601
+    post_id         TEXT PRIMARY KEY,       -- "{channel_id}_{msg_id}"
+    channel_id      TEXT NOT NULL REFERENCES channels(channel_id),
+    content         TEXT,
+    views           INTEGER DEFAULT 0,
+    authority_score REAL DEFAULT 0.0,       -- 메시지 단위 Authority Score
+    timestamp       TEXT NOT NULL           -- ISO-8601
 );
 
 CREATE TABLE IF NOT EXISTS links (
@@ -108,6 +109,10 @@ def init_db() -> None:
         ch_cols = {row[1] for row in conn.execute("PRAGMA table_info(channels)")}
         if "username" not in ch_cols:
             conn.execute("ALTER TABLE channels ADD COLUMN username TEXT DEFAULT ''")
+
+        post_cols = {row[1] for row in conn.execute("PRAGMA table_info(posts)")}
+        if "authority_score" not in post_cols:
+            conn.execute("ALTER TABLE posts ADD COLUMN authority_score REAL DEFAULT 0.0")
     print(f"[DB] 초기화 완료 → {config.DB_PATH}")
 
 
@@ -349,3 +354,61 @@ def get_channel_username(channel_id: str) -> str:
             "SELECT username FROM channels WHERE channel_id = ?", (channel_id,)
         ).fetchone()
     return (row["username"] or "") if row else ""
+
+
+def update_post_score(post_id: str, score: float) -> None:
+    """포스트 Authority Score를 업데이트합니다."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE posts SET authority_score = ? WHERE post_id = ?",
+            (score, post_id)
+        )
+
+
+def get_posts_for_clustering(min_length: int = 30,
+                             collect_hours: int | None = None) -> list[sqlite3.Row]:
+    """
+    클러스터링 대상 포스트를 authority_score 내림차순으로 반환합니다.
+    url_hashes_raw: 포스트에 연결된 URL 해시를 '|' 구분 문자열로 포함.
+    """
+    cutoff_clause = ""
+    params: list = [min_length]
+    if collect_hours is not None:
+        cutoff = datetime.utcnow() - timedelta(hours=collect_hours)
+        cutoff_clause = "AND p.timestamp >= ?"
+        params.append(cutoff.isoformat())
+    params.append(10000)
+
+    sql = f"""
+        SELECT
+            p.post_id,
+            p.channel_id,
+            p.content,
+            p.views,
+            p.authority_score,
+            GROUP_CONCAT(pl.url_hash, '|') AS url_hashes_raw
+        FROM posts p
+        LEFT JOIN post_links pl ON p.post_id = pl.post_id
+        WHERE p.content IS NOT NULL
+          AND LENGTH(p.content) >= ?
+          {cutoff_clause}
+        GROUP BY p.post_id
+        ORDER BY p.authority_score DESC
+        LIMIT ?
+    """
+    with get_conn() as conn:
+        return conn.execute(sql, params).fetchall()
+
+
+def get_links_metadata(url_hashes: list[str]) -> dict[str, dict]:
+    """url_hash → {original_url, title, description, authority_score} 딕셔너리 반환."""
+    if not url_hashes:
+        return {}
+    placeholders = ",".join("?" * len(url_hashes))
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT url_hash, original_url, title, description, authority_score "
+            f"FROM links WHERE url_hash IN ({placeholders})",
+            url_hashes
+        ).fetchall()
+    return {r["url_hash"]: dict(r) for r in rows}

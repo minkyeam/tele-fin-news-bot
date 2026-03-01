@@ -206,16 +206,22 @@ def run_summarization(clusters: list[Cluster]) -> None:
             price_data = stock_fetcher.fetch_prices(tickers_raw)
             stocks_text = stock_fetcher.format_stocks_text(price_data)
 
+        # t.me 링크 생성 (URL 없는 포스트의 원문 링크)
+        tme_links = _build_tme_links(cluster)
+
         db.upsert_signal(
             cluster_id=cluster.cluster_id,
             representative_title=title,
             summary_text=summary,
             total_authority_score=cluster.total_authority_score,
             stocks_text=stocks_text,
+            tme_links=tme_links,
         )
 
-        stock_info = f"  📈 {stocks_text[:60]}" if stocks_text else ""
-        print(f"  [{i}/{len(clusters)}] 「{title}」 — {len(cluster.url_hashes)}개 링크{stock_info}")
+        n_links = len(cluster.url_hashes)
+        n_posts = len(cluster.post_texts)
+        stock_info = f"  📈 {stocks_text[:50]}" if stocks_text else ""
+        print(f"  [{i}/{len(clusters)}] 「{title}」 — 포스트 {n_posts}개/링크 {n_links}개{stock_info}")
 
     print("[Summarizer] 완료.")
 
