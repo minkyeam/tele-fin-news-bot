@@ -1,9 +1,10 @@
 services:
-  - type: worker
+  - type: web
     name: tmsa-bot
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py --listen
+    healthCheckPath: /
     envVars:
       # ── Telegram API (수집용) ──────────────────────────────────────────
       - key: TELEGRAM_API_ID
