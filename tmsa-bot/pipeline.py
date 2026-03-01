@@ -21,6 +21,7 @@ import collector
 import scorer
 import clusterer
 import summarizer
+import bot_sender
 import config
 
 
@@ -53,6 +54,9 @@ async def run_pipeline(
     # ── 결과 출력 ─────────────────────────────────────────────────────────────
     summarizer.print_signals()
 
+    # ── Step 5: 텔레그램 전송 ─────────────────────────────────────────────────
+    print("\n── Step 5/5: 텔레그램 봇 전송 ──────────────────────────────────────")
+    await bot_sender.send_signals()
+
     elapsed = time.perf_counter() - t0
     print(f"\n✅ 파이프라인 완료 ({elapsed:.1f}s)")
-    print("   봇 전송: python main.py --send")
